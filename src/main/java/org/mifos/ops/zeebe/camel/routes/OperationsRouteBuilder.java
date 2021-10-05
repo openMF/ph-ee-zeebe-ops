@@ -23,6 +23,22 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
     @Override
     public void configure() {
 
+        from("rest:POST:/channel/workflow/")
+                .id("workflow-start")
+                .log(LoggingLevel.INFO, "## Starting new workflow")
+                .process(e -> {
+
+                    JSONObject variables = new JSONObject(e.getIn().getBody(String.class));
+
+                   zeebeClient.newCreateInstanceCommand()
+                           .bpmnProcessId(e.getIn().getHeader("processId", String.class))
+                           .latestVersion()
+                           .variables(variables)
+                           .send()
+                           .join();
+
+                });
+
         from("rest:POST:/channel/transaction/{" + TRANSACTION_ID + "}/resolve")
                 .id("transaction-resolve")
                 .log(LoggingLevel.INFO, "## operator transaction resolve")
