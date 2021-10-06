@@ -2,7 +2,11 @@ package org.mifos.ops.zeebe.camel.routes;
 
 import io.camunda.zeebe.client.ZeebeClient;
 import org.apache.camel.LoggingLevel;
+import org.apache.camel.util.json.JsonObject;
+import org.checkerframework.checker.units.qual.A;
+import org.json.JSONArray;
 import org.json.JSONObject;
+import org.slf4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.mifos.connector.common.camel.ErrorHandlerRouteBuilder;
@@ -10,6 +14,7 @@ import org.mifos.connector.common.camel.ErrorHandlerRouteBuilder;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.mifos.ops.zeebe.zeebe.ZeebeMessages.OPERATOR_MANUAL_RECOVERY;
 import static org.mifos.ops.zeebe.zeebe.ZeebeVariables.BPMN_PROCESS_ID;
@@ -20,6 +25,9 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
 
     @Autowired
     private ZeebeClient zeebeClient;
+
+    @Autowired
+    private Logger logger;
 
     @Override
     public void configure() {
@@ -48,12 +56,68 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
 
                     e.getMessage().setBody(e.getIn().getHeader(BPMN_PROCESS_ID, String.class));
 
-                   zeebeClient.newCreateInstanceCommand()
-                           .bpmnProcessId(e.getIn().getHeader(BPMN_PROCESS_ID, String.class))
-                           .latestVersion()
-                           .variables(variables)
-                           .send()
-                           .join();
+                    zeebeClient.newCreateInstanceCommand()
+                            .bpmnProcessId(e.getIn().getHeader(BPMN_PROCESS_ID, String.class))
+                            .latestVersion()
+                            .variables(variables)
+                            .send()
+                            .join();
+
+                });
+
+        /**
+         * Bulk cancellation of active process by processId
+         *
+         * method: [PUT]
+         * request body: {
+         *     processId: [123, 456, 789]
+         * }
+         *
+         * response body: {
+         *     success: [], # list of processId which was successfully cancelled
+         *     failed: [] # list of processId whose cancellation wasn't successful
+         *     cancellationSuccessful: int # total number of process which was successfully cancelled
+         *     cancellationFailed: int # total number of process whose cancellation wasn't successful
+         *
+         * }
+         */
+        from("rest:PUT:/channel/workflow")
+                .id("bulk-cancellation")
+                .log(LoggingLevel.INFO, "## bulk cancellation by process id")
+                .process(exchange -> {
+
+                    JSONObject object = new JSONObject(exchange.getIn().getBody(String.class));
+                    JSONArray processIds = object.getJSONArray("processId");
+
+                    JSONArray success = new JSONArray();
+                    JSONArray failed = new JSONArray();
+
+                    AtomicInteger successfullyCancelled = new AtomicInteger();
+                    AtomicInteger cancellationFailed = new AtomicInteger();
+
+
+                    processIds.forEach(elm -> {
+                        long processId = Long.parseLong(elm.toString());
+
+                        try {
+                            zeebeClient.newCancelInstanceCommand(processId).send().join();
+                            success.put(processId);
+                            successfullyCancelled.getAndIncrement();
+                        }catch (Exception e) {
+                            failed.put(processId);
+                            cancellationFailed.getAndIncrement();
+                            logger.error("Cancellation of process id " + processId + " failed\n" + e.getMessage());
+                        }
+
+                    });
+
+                    JSONObject response = new JSONObject();
+                    response.put("success", success);
+                    response.put("failed", failed);
+                    response.put("cancellationSuccessful", successfullyCancelled.get());
+                    response.put("cancellationFailed", cancellationFailed.get());
+
+                    exchange.getMessage().setBody(response.toString());
 
                 });
 
