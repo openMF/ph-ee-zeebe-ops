@@ -2,20 +2,19 @@ package org.mifos.ops.zeebe.camel.routes;
 
 import io.camunda.zeebe.client.ZeebeClient;
 import org.apache.camel.LoggingLevel;
-import org.apache.camel.util.json.JsonObject;
-import org.checkerframework.checker.units.qual.A;
 import org.json.JSONArray;
+import org.elasticsearch.client.RequestOptions;
+import org.elasticsearch.client.RestHighLevelClient;
+import org.elasticsearch.client.indices.GetIndexRequest;
 import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.mifos.connector.common.camel.ErrorHandlerRouteBuilder;
-
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
-
 import static org.mifos.ops.zeebe.zeebe.ZeebeMessages.OPERATOR_MANUAL_RECOVERY;
 import static org.mifos.ops.zeebe.zeebe.ZeebeVariables.BPMN_PROCESS_ID;
 import static org.mifos.ops.zeebe.zeebe.ZeebeVariables.TRANSACTION_ID;
@@ -28,6 +27,8 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
 
     @Autowired
     private Logger logger;
+
+    private RestHighLevelClient esClient;
 
     @Override
     public void configure() {
@@ -55,6 +56,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                     JSONObject variables = new JSONObject(e.getIn().getBody(String.class));
 
                     e.getMessage().setBody(e.getIn().getHeader(BPMN_PROCESS_ID, String.class));
+
 
                     zeebeClient.newCreateInstanceCommand()
                             .bpmnProcessId(e.getIn().getHeader(BPMN_PROCESS_ID, String.class))
@@ -118,7 +120,24 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                     response.put("cancellationFailed", cancellationFailed.get());
 
                     exchange.getMessage().setBody(response.toString());
+                });
 
+
+        from("rest:get:/es/health")
+                .id("es-test")
+                .log(LoggingLevel.INFO, "## Testing es connection")
+                .process(exchange -> {
+                    JSONObject jsonResponse = new JSONObject();
+                    try {
+                        GetIndexRequest request = new GetIndexRequest("*");
+                        esClient.indices().get(request, RequestOptions.DEFAULT);
+                        jsonResponse.put("status", "UP");
+                    } catch (Exception e) {
+                        jsonResponse.put("status", "down");
+                        jsonResponse.put("reason", e.getMessage());
+                    }
+
+                    exchange.getMessage().setBody(jsonResponse.toString());
                 });
 
         from("rest:POST:/channel/transaction/{" + TRANSACTION_ID + "}/resolve")
@@ -127,9 +146,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                 .process(e -> {
                     Map<String, Object> variables = new HashMap<>();
                     JSONObject request = new JSONObject(e.getIn().getBody(String.class));
-                    request.keys().forEachRemaining(k -> {
-                        variables.put(k, request.get(k));
-                    });
+                    request.keys().forEachRemaining(k -> variables.put(k, request.get(k)));
 
                     zeebeClient.newPublishMessageCommand()
                             .messageName(OPERATOR_MANUAL_RECOVERY)
@@ -149,9 +166,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                     JSONObject incident = request.getJSONObject("incident");
                     Map<String, Object> newVariables = new HashMap<>();
                     JSONObject requestedVariables = request.getJSONObject("variables");
-                    requestedVariables.keys().forEachRemaining(k -> {
-                        newVariables.put(k, requestedVariables.get(k));
-                    });
+                    requestedVariables.keys().forEachRemaining(k -> newVariables.put(k, requestedVariables.get(k)));
 
                     zeebeClient.newSetVariablesCommand(incident.getLong("elementInstanceKey"))
                             .variables(newVariables)
@@ -177,9 +192,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                     JSONObject incident = request.getJSONObject("incident");
                     Map<String, Object> newVariables = new HashMap<>();
                     JSONObject requestedVariables = request.getJSONObject("variables");
-                    requestedVariables.keys().forEachRemaining(k -> {
-                        newVariables.put(k, requestedVariables.get(k));
-                    });
+                    requestedVariables.keys().forEachRemaining(k -> newVariables.put(k, requestedVariables.get(k)));
 
                     zeebeClient.newSetVariablesCommand(incident.getLong("elementInstanceKey"))
                             .variables(newVariables)
