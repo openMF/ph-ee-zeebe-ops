@@ -12,6 +12,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import static org.mifos.ops.zeebe.zeebe.ZeebeMessages.OPERATOR_MANUAL_RECOVERY;
+import static org.mifos.ops.zeebe.zeebe.ZeebeVariables.BPMN_PROCESS_ID;
 import static org.mifos.ops.zeebe.zeebe.ZeebeVariables.TRANSACTION_ID;
 
 @Component
@@ -22,6 +23,39 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
 
     @Override
     public void configure() {
+
+        /**
+         * Starts a workflow with the set of variables passed as body parameters
+         *
+         * method: [POST]
+         * request body: {
+         *     "var1": "val1",
+         *     "var2": "val2"
+         * }
+         *
+         * response body: Null
+         *
+         * demo url: /channel/workflow/international_remittance_payer_process-ibank-usa
+         * Here [international_remittance_payer_process-ibank-usa] is the value of [BPMN_PROCESS_ID] path variable
+         *
+         */
+        from(String.format("rest:POST:/channel/workflow/{%s}", BPMN_PROCESS_ID))
+                .id("workflow-start")
+                .log(LoggingLevel.INFO, "## Starting new workflow")
+                .process(e -> {
+
+                    JSONObject variables = new JSONObject(e.getIn().getBody(String.class));
+
+                    e.getMessage().setBody(e.getIn().getHeader(BPMN_PROCESS_ID, String.class));
+
+                   zeebeClient.newCreateInstanceCommand()
+                           .bpmnProcessId(e.getIn().getHeader(BPMN_PROCESS_ID, String.class))
+                           .latestVersion()
+                           .variables(variables)
+                           .send()
+                           .join();
+
+                });
 
         from("rest:POST:/channel/transaction/{" + TRANSACTION_ID + "}/resolve")
                 .id("transaction-resolve")
