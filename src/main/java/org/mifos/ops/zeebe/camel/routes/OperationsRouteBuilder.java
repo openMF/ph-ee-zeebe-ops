@@ -6,6 +6,7 @@ import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.client.RequestOptions;
 import org.elasticsearch.client.RestHighLevelClient;
+import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.search.aggregations.AggregationBuilders;
 import org.elasticsearch.search.aggregations.bucket.terms.TermsAggregationBuilder;
 import org.elasticsearch.search.builder.SearchSourceBuilder;
@@ -21,8 +22,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import static org.mifos.ops.zeebe.zeebe.ZeebeMessages.OPERATOR_MANUAL_RECOVERY;
-import static org.mifos.ops.zeebe.zeebe.ZeebeVariables.BPMN_PROCESS_ID;
-import static org.mifos.ops.zeebe.zeebe.ZeebeVariables.TRANSACTION_ID;
+import static org.mifos.ops.zeebe.zeebe.ZeebeVariables.*;
 
 @Component
 public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
@@ -38,6 +38,60 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
 
     @Override
     public void configure() {
+
+        /**
+         * Get the process variables by process instance key
+         *
+         * demo url: /channel/process/variable/2251799813783649
+         * here [2251799813783649] is the value for path parameter [PROCESS_INSTANCE_KEY]
+         *
+         * example response: {
+         * "isRtpRequest":"false",
+         * "initiatorFspId":"\"ibank-usa\"",
+         * "originDate":"1633441154238"
+         * }
+         */
+        from(String.format("rest:get:/channel/process/variable/{%s}", PROCESS_INSTANCE_KEY))
+                .id("get-process-variable")
+                .log(LoggingLevel.INFO, "## Fetch process variable")
+                .process(exchange -> {
+
+                    Long processId = exchange.getIn().getHeader(PROCESS_INSTANCE_KEY, Long.class);
+
+                    TermsAggregationBuilder valueAgg = AggregationBuilders.terms("value")
+                            .field("value.value")
+                            .size(100);
+                    TermsAggregationBuilder nameAgg = AggregationBuilders.terms("key")
+                            .field("value.name")
+                            .size(100)
+                            .subAggregation(valueAgg);
+
+                    SearchSourceBuilder builder = new SearchSourceBuilder().aggregation(nameAgg)
+                            .query(QueryBuilders.matchQuery("value.processInstanceKey", processId));
+
+                    SearchRequest searchRequest =
+                            new SearchRequest().indices("zeebe-*").source(builder);
+
+                    SearchResponse response = esClient.search(searchRequest, RequestOptions.DEFAULT);
+
+                    JSONObject responseToBeReturned = new JSONObject();
+
+                    String r = response.toString();
+                    JSONObject res = new JSONObject(r);
+                    JSONArray keyBucket = res.getJSONObject("aggregations").getJSONObject("sterms#key")
+                            .getJSONArray("buckets");
+
+                    keyBucket.forEach(elm -> {
+                        JSONObject bucket = (JSONObject) elm;
+                        String key = bucket.getString("key");
+                        Object value = ((JSONObject)bucket.getJSONObject("sterms#value").getJSONArray("buckets")
+                                .get(0)).get("key");
+
+                        responseToBeReturned.put(key, value);
+                    });
+
+                    exchange.getMessage().setBody(responseToBeReturned.toString());
+                });
 
         /**
          * Starts a workflow with the set of variables passed as body parameters
