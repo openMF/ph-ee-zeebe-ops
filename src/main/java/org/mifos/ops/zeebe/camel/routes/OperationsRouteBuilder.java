@@ -2,9 +2,14 @@ package org.mifos.ops.zeebe.camel.routes;
 
 import io.camunda.zeebe.client.ZeebeClient;
 import org.apache.camel.LoggingLevel;
-import org.json.JSONArray;
+import org.elasticsearch.action.search.SearchRequest;
+import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.client.RequestOptions;
 import org.elasticsearch.client.RestHighLevelClient;
+import org.elasticsearch.search.aggregations.AggregationBuilders;
+import org.elasticsearch.search.aggregations.bucket.terms.TermsAggregationBuilder;
+import org.elasticsearch.search.builder.SearchSourceBuilder;
+import org.json.JSONArray;
 import org.elasticsearch.client.indices.GetIndexRequest;
 import org.json.JSONObject;
 import org.slf4j.Logger;
@@ -28,6 +33,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
     @Autowired
     private Logger logger;
 
+    @Autowired
     private RestHighLevelClient esClient;
 
     @Override
@@ -138,6 +144,71 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                     }
 
                     exchange.getMessage().setBody(jsonResponse.toString());
+                });
+
+        /**
+         * Get the process definition key and name
+         *
+         * sample response body: {
+         *    "bulk_processor-ibank-usa":[
+         *       2251799813685998,
+         *       2251799814125425
+         *    ],
+         *    "international_remittance_payee_process-ibank-india":[
+         *       2251799813686276,
+         *       2251799814069864
+         *    ],
+         *    "international_remittance_payer_process-ibank-usa":[
+         *       2251799813686414,
+         *       2251799814069794
+         *    ],
+         *    "international_remittance_payer_process-ibank-india":[
+         *       2251799813686138,
+         *       2251799814070206
+         *    ],
+         *    "international_remittance_payee_process-ibank-usa":[
+         *       2251799813686068,
+         *       2251799814070344
+         *    ]
+         * }
+         */
+        from("rest:get:/channel/process")
+                .id("get-process-definition-key-name")
+                .log(LoggingLevel.INFO, "## get process definition key and name")
+                .process(exchange -> {
+                    TermsAggregationBuilder definitionKeyAggregation = AggregationBuilders.terms("defKey")
+                            .field("value.processDefinitionKey")
+                            .size(1005);
+                    TermsAggregationBuilder definitionNameAggregation = AggregationBuilders.terms("processId")
+                            .field("value.bpmnProcessId")
+                            .size(5)
+                            .subAggregation(definitionKeyAggregation);
+
+                    SearchSourceBuilder builder = new SearchSourceBuilder().aggregation(definitionNameAggregation);
+
+                    SearchRequest searchRequest =
+                            new SearchRequest().indices("zeebe-*").source(builder);
+                    SearchResponse response = esClient.search(searchRequest, RequestOptions.DEFAULT);
+
+                    JSONObject responseToBeReturned =  new JSONObject();
+
+                    String r = response.toString();
+                    JSONObject res = new JSONObject(r);
+                    JSONArray buckets = res.getJSONObject("aggregations")
+                            .getJSONObject("sterms#processId").getJSONArray("buckets");
+
+                    buckets.forEach(element -> {
+                        String processId = ((JSONObject) element).getString("key");
+                        JSONArray processDefinitionsKeys = new JSONArray();
+
+                        // loop over each internal aggregation to get the processDefinitionKey
+                        ((JSONObject) element).getJSONObject("lterms#defKey").getJSONArray("buckets")
+                        .forEach(elm -> processDefinitionsKeys.put(((JSONObject) elm).getLong("key")));
+
+                        responseToBeReturned.put(processId, processDefinitionsKeys);
+                    });
+
+                    exchange.getMessage().setBody(responseToBeReturned.toString());
                 });
 
         from("rest:POST:/channel/transaction/{" + TRANSACTION_ID + "}/resolve")
