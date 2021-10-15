@@ -44,6 +44,67 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
     public void configure() {
 
         /**
+         * Cancellation of the process by variable name and value
+         *
+         * sample request: {
+         * 	"key": "initiatorFspId",
+         * 	"value": "\"ibank-usa\""
+         * }
+         *
+         * sample response: {
+         *   "cancellationSuccessful": 0,
+         *   "cancellationFailed": 1,
+         *   "success": [],
+         *   "failed": [
+         *     2251799813686414
+         *   ]
+         * }
+         *
+         */
+        from("rest:POST:/channel/workflow/cancelbyvalue")
+                .id("cancel-workflow")
+                .log(LoggingLevel.INFO, "## Cancelling the process by matching variable name and value")
+                .process(exchange -> {
+
+                    JSONObject object = new JSONObject(exchange.getIn().getBody(String.class));
+                    String key = object.getString("key");
+                    Object value = object.get("value");
+
+                    TermsAggregationBuilder definitionNameAggregation = AggregationBuilders.terms("1")
+                            .field("value.processDefinitionKey")
+                            .size(5);
+
+                    BoolQueryBuilder query = QueryBuilders.boolQuery()
+                            .filter(QueryBuilders.matchPhraseQuery("value.name", key))
+                            .filter(QueryBuilders.matchPhraseQuery("value.value", value));
+
+                    SearchSourceBuilder builder = new SearchSourceBuilder().aggregation(definitionNameAggregation)
+                            .query(query);
+
+                    SearchRequest searchRequest =
+                            new SearchRequest().indices("zeebe-*").source(builder);
+
+                    SearchResponse response = esClient.search(searchRequest, RequestOptions.DEFAULT);
+
+                    String r = response.toString();
+                    JSONObject res = new JSONObject(r);
+                    JSONArray processDefinitionKeysObject = res.getJSONObject("aggregations").getJSONObject("lterms#1")
+                            .getJSONArray("buckets");
+
+                    JSONArray processIds = new JSONArray();
+
+                    processDefinitionKeysObject.forEach(elm -> {
+                        long processId = ((JSONObject) elm).getLong("key");
+                        processIds.put(processId);
+                    });
+
+                    JSONObject responseToBeReturned = cancelProcess(processIds);
+
+                    exchange.getMessage().setBody(responseToBeReturned.toString());
+
+                });
+
+        /**
          * Get the list of tasks that are already executed, by process definition key
          *
          * sample url:
@@ -149,6 +210,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                     exchange.getMessage().setBody(responseToBeReturned.toString());
 
                 });
+
         /**
          * Get the process current state and variables by process instance id
          *
@@ -301,9 +363,9 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                     JSONObject object = new JSONObject(exchange.getIn().getBody(String.class));
                     JSONArray processIds = object.getJSONArray("processId");
 
-                    String response = cancelWorkflow(processIds);
+                    JSONObject response =cancelProcess(processIds);
 
-                    exchange.getMessage().setBody(response);
+                    exchange.getMessage().setBody(response.toString());
                 });
 
 
@@ -559,5 +621,37 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
         response.put("cancellationFailed", cancellationFailed.get());
 
         return response.toString();
+    }
+
+    private JSONObject cancelProcess(JSONArray processIds) {
+        JSONArray success = new JSONArray();
+        JSONArray failed = new JSONArray();
+
+        AtomicInteger successfullyCancelled = new AtomicInteger();
+        AtomicInteger cancellationFailed = new AtomicInteger();
+
+
+        processIds.forEach(elm -> {
+            long processId = Long.parseLong(elm.toString());
+
+            try {
+                zeebeClient.newCancelInstanceCommand(processId).send().join();
+                success.put(processId);
+                successfullyCancelled.getAndIncrement();
+            }catch (Exception e) {
+                failed.put(processId);
+                cancellationFailed.getAndIncrement();
+                logger.error("Cancellation of process id " + processId + " failed\n" + e.getMessage());
+            }
+
+        });
+
+        JSONObject response = new JSONObject();
+        response.put("success", success);
+        response.put("failed", failed);
+        response.put("cancellationSuccessful", successfullyCancelled.get());
+        response.put("cancellationFailed", cancellationFailed.get());
+
+        return response;
     }
 }
