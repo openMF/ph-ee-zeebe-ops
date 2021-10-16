@@ -418,11 +418,10 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
 
         BoolQueryBuilder query = QueryBuilders.boolQuery()
                 .filter(QueryBuilders.boolQuery()
-                        .should(getMatchPhraseQueryBuilder("intent", "CREATED"))
                         .should(getMatchPhraseQueryBuilder("intent", "ELEMENT_ACTIVATED"))
                         .should(getMatchPhraseQueryBuilder("intent", "ELEMENT_ACTIVATING"))
                         .minimumShouldMatch(1))
-                        .mustNot(getMatchPhraseQueryBuilder("intent", "TIMED_OUT"))
+                        .mustNot(getMatchPhraseQueryBuilder("intent", "ELEMENT_COMPLETED"))
                 .filter(QueryBuilders.matchPhraseQuery("value.processDefinitionKey", processInstanceKey));
 
         SearchSourceBuilder builder = new SearchSourceBuilder().aggregation(definitionNameAggregation)
