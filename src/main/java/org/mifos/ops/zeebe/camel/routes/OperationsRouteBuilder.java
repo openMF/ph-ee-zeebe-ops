@@ -55,7 +55,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
          *   "originDate": "1634027804733"
          * }
          */
-        from(String.format("rest:get:/channel/process/variable/{%s}/{%s}", PROCESS_DEFINITION_KEY, PROCESS_INSTANCE_KEY))
+        from(String.format("rest:get:/channel/process/{%s}/task/{%s}/variable/", PROCESS_DEFINITION_KEY, PROCESS_INSTANCE_KEY))
                 .id("get-process-variable")
                 .log(LoggingLevel.INFO, "## Fetch process variable")
                 .process(exchange -> {
