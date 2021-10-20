@@ -1,11 +1,14 @@
 package org.mifos.ops.zeebe.camel.routes;
 
 import io.camunda.zeebe.client.ZeebeClient;
+import org.apache.camel.Exchange;
 import org.apache.camel.LoggingLevel;
 import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.client.RequestOptions;
 import org.elasticsearch.client.RestHighLevelClient;
+import org.elasticsearch.index.query.BoolQueryBuilder;
+import org.elasticsearch.index.query.QueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.search.aggregations.AggregationBuilders;
 import org.elasticsearch.search.aggregations.bucket.terms.TermsAggregationBuilder;
@@ -17,6 +20,7 @@ import org.slf4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.mifos.connector.common.camel.ErrorHandlerRouteBuilder;
+import java.io.IOException;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
@@ -91,6 +95,37 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                     });
 
                     exchange.getMessage().setBody(responseToBeReturned.toString());
+
+                });
+        /**
+         * Get the process current state and variables by process instance id
+         *
+         * demo url: /channel/process/variable/2251799813686414
+         * here [2251799813686414] is the value for path parameter [PROCESS_INSTANCE_ID]
+         *
+         * example response: {
+         *   "currentState": "",
+         *   "processVariables": {}
+         * }
+         */
+        from(String.format("rest:get:/channel/process/{%s}", PROCESS_DEFINITION_KEY))
+                .id("get-process-variable")
+                .log(LoggingLevel.INFO, "## Fetch process variable and current state")
+                .process(exchange -> {
+
+                    Long processInstanceKey = exchange.getIn().getHeader(PROCESS_DEFINITION_KEY, Long.class);
+
+                    try {
+                        JSONObject processVariables = getProcessVariable(processInstanceKey);
+                        String state = getCurrentState(processInstanceKey);
+                        JSONObject responseToBeReturned = new JSONObject();
+                        responseToBeReturned.put("currentState", state);
+                        responseToBeReturned.put("processVariables", processVariables);
+                        exchange.getMessage().setBody(responseToBeReturned.toString());
+                    } catch (Exception e) {
+                        exchange.getMessage().setHeader(Exchange.HTTP_RESPONSE_CODE, 404);
+                        exchange.getMessage().setBody(e.toString());
+                    }
                 });
 
         /**
@@ -338,5 +373,78 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                         .join())
                 .setBody(constant(null));
 
+    }
+
+    private JSONObject getProcessVariable(Long processInstanceKey) throws IOException {
+        TermsAggregationBuilder valueAgg = AggregationBuilders.terms("value")
+                .field("value.value")
+                .size(100);
+        TermsAggregationBuilder nameAgg = AggregationBuilders.terms("key")
+                .field("value.name")
+                .size(100)
+                .subAggregation(valueAgg);
+
+        SearchSourceBuilder builder = new SearchSourceBuilder().aggregation(nameAgg)
+                .query(QueryBuilders.matchQuery("value.processInstanceKey", processInstanceKey));
+
+        SearchRequest searchRequest =
+                new SearchRequest().indices("zeebe-*").source(builder);
+
+        SearchResponse response = esClient.search(searchRequest, RequestOptions.DEFAULT);
+
+        JSONObject responseToBeReturned = new JSONObject();
+
+        String r = response.toString();
+        JSONObject res = new JSONObject(r);
+        JSONArray keyBucket = res.getJSONObject("aggregations").getJSONObject("sterms#key")
+                .getJSONArray("buckets");
+
+        keyBucket.forEach(elm -> {
+            JSONObject bucket = (JSONObject) elm;
+            String key = bucket.getString("key");
+            Object value = ((JSONObject)bucket.getJSONObject("sterms#value").getJSONArray("buckets")
+                    .get(0)).get("key");
+
+            responseToBeReturned.put(key, value);
+        });
+
+        return responseToBeReturned;
+    }
+
+    private String getCurrentState(Long processInstanceKey) throws Exception {
+        TermsAggregationBuilder definitionNameAggregation = AggregationBuilders.terms("worker")
+                .field("value.worker")
+                .size(5);
+
+        BoolQueryBuilder query = QueryBuilders.boolQuery()
+                .filter(QueryBuilders.boolQuery()
+                        .should(getMatchPhraseQueryBuilder("intent", "ELEMENT_ACTIVATED"))
+                        .should(getMatchPhraseQueryBuilder("intent", "ELEMENT_ACTIVATING"))
+                        .minimumShouldMatch(1))
+                        .mustNot(getMatchPhraseQueryBuilder("intent", "ELEMENT_COMPLETED"))
+                .filter(QueryBuilders.matchPhraseQuery("value.processDefinitionKey", processInstanceKey));
+
+        SearchSourceBuilder builder = new SearchSourceBuilder().aggregation(definitionNameAggregation)
+                .query(query);
+
+        SearchRequest searchRequest =
+                new SearchRequest().indices("zeebe-*").source(builder);
+
+        SearchResponse response = esClient.search(searchRequest, RequestOptions.DEFAULT);
+
+        String r = response.toString();
+        JSONObject res = new JSONObject(r);
+        JSONArray keyBucket = res.getJSONObject("aggregations").getJSONObject("sterms#worker")
+                .getJSONArray("buckets");
+
+        if(keyBucket.isEmpty()) {
+            throw new Exception("Unable to fetch current state");
+        }
+
+        return ((JSONObject) keyBucket.get(0)).getString("key");
+    }
+
+    private QueryBuilder getMatchPhraseQueryBuilder(String key, String valueToMatch) {
+        return QueryBuilders.matchPhraseQuery(key, valueToMatch);
     }
 }
