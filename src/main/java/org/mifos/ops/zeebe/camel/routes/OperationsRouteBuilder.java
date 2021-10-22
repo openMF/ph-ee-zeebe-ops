@@ -455,10 +455,10 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
 
         BoolQueryBuilder query = QueryBuilders.boolQuery()
                 .filter(QueryBuilders.boolQuery()
-                        .should(getMatchPhraseQueryBuilder("intent", "ELEMENT_ACTIVATED"))
-                        .should(getMatchPhraseQueryBuilder("intent", "ELEMENT_ACTIVATING"))
+                        .should(QueryBuilders.matchPhraseQuery("intent", "ELEMENT_ACTIVATED"))
+                        .should(QueryBuilders.matchPhraseQuery("intent", "ELEMENT_ACTIVATING"))
                         .minimumShouldMatch(1))
-                        .mustNot(getMatchPhraseQueryBuilder("intent", "ELEMENT_COMPLETED"))
+                        .mustNot(QueryBuilders.matchPhraseQuery("intent", "ELEMENT_COMPLETED"))
                 .filter(QueryBuilders.matchPhraseQuery("value.processDefinitionKey", processInstanceKey));
 
         SearchSourceBuilder builder = new SearchSourceBuilder().aggregation(definitionNameAggregation)
@@ -479,10 +479,6 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
         }
 
         return ((JSONObject) keyBucket.get(0)).getString("key");
-    }
-
-    private QueryBuilder getMatchPhraseQueryBuilder(String key, String valueToMatch) {
-        return QueryBuilders.matchPhraseQuery(key, valueToMatch);
     }
 
     private String cancelWorkflow(JSONArray processIds) {
