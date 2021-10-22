@@ -426,6 +426,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                 .setBody(constant(null));
 
     }
+<<<<<<< HEAD
 
     private JSONObject getProcessVariable(Long processInstanceKey) throws IOException {
         TermsAggregationBuilder valueAgg = AggregationBuilders.terms("value")
@@ -499,4 +500,6 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
     private QueryBuilder getMatchPhraseQueryBuilder(String key, String valueToMatch) {
         return QueryBuilders.matchPhraseQuery(key, valueToMatch);
     }
+=======
+>>>>>>> 9b0af3d (Unused getMatchPhraseQueryBuilder removed)
 }
