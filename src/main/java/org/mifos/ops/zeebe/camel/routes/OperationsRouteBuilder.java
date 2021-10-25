@@ -44,6 +44,58 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
     public void configure() {
 
         /**
+         * Get the list of tasks that are already executed, by process definition key
+         *
+         * sample url:
+         * localhost:5000/channel/task/2251799813686414
+         *
+         * sample response: {
+         *   "tasks": [
+         *     ""
+         *   ]
+         * }
+         */
+        from(String.format("rest:get:/channel/process/{%s}/task/", PROCESS_DEFINITION_KEY))
+                .id("get-executed-task")
+                .log(LoggingLevel.INFO, "## Fetching the executed task")
+                .process(exchange -> {
+
+                    Long processInstanceKey = exchange.getIn().getHeader(PROCESS_DEFINITION_KEY, Long.class);
+
+                    TermsAggregationBuilder definitionNameAggregation = AggregationBuilders.terms("worker")
+                            .field("value.worker")
+                            .size(5);
+
+                    BoolQueryBuilder query = QueryBuilders.boolQuery()
+                            .filter(QueryBuilders.matchPhraseQuery("intent", "ELEMENT_COMPLETED"))
+                            .filter(QueryBuilders.matchPhraseQuery("value.processDefinitionKey", processInstanceKey));
+
+                    SearchSourceBuilder builder = new SearchSourceBuilder().aggregation(definitionNameAggregation)
+                            .query(query);
+
+                    SearchRequest searchRequest =
+                            new SearchRequest().indices("zeebe-*").source(builder);
+
+                    SearchResponse response = esClient.search(searchRequest, RequestOptions.DEFAULT);
+
+                    String r = response.toString();
+                    JSONObject res = new JSONObject(r);
+                    JSONArray keyBucket = res.getJSONObject("aggregations").getJSONObject("sterms#worker")
+                            .getJSONArray("buckets");
+
+                    JSONObject responseToBeReturned = new JSONObject();
+                    JSONArray taskList = new JSONArray();
+
+                    keyBucket.forEach(elm -> {
+                        JSONObject task = (JSONObject) elm;
+                        taskList.put(task.getString("key"));
+                    });
+                    responseToBeReturned.put("tasks", taskList);
+
+                    exchange.getMessage().setBody(responseToBeReturned.toString());
+                });
+
+        /**
          * Get the process variables by process instance key
          *
          * demo url: /channel/process/variable/2251799813783649
