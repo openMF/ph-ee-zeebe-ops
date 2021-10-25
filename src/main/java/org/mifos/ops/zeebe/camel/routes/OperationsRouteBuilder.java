@@ -129,6 +129,69 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                 });
 
         /**
+         * Cancel the workflow in specific state and having retry count greater than the passed value
+         *
+         * request body: {
+         *     "state": "Activity_1m5hpl9",
+         *     "retries": 12
+         * }
+         *
+         * sample resonse: {
+         *   "cancellationSuccessful": 0,
+         *   "cancellationFailed": 4,
+         *   "success": [],
+         *   "failed": [
+         *     2251799813776442,
+         *     2251799813779803,
+         *     2251799813783649,
+         *     2251799813686416
+         *   ]
+         * }
+         */
+        from("rest:POST:channel/workflow/cancel")
+                .id("cancel-workflow-by-state")
+                .log(LoggingLevel.INFO, "## Starting new workflow")
+                .process(exchange -> {
+
+                    JSONObject requestBody = new JSONObject(exchange.getIn().getBody(String.class));
+                    String state = requestBody.getString("state");
+                    Long retryCount = requestBody.getLong("retries");
+
+                    TermsAggregationBuilder nameAgg = AggregationBuilders.terms("1")
+                            .field("value.processInstanceKey")
+                            .size(10);
+
+                    SearchSourceBuilder builder = new SearchSourceBuilder().aggregation(nameAgg)
+                            .query(QueryBuilders.matchQuery("value.elementId", state))
+                            .query(QueryBuilders.rangeQuery("value.retries").gte(retryCount));
+
+                    SearchRequest searchRequest =
+                            new SearchRequest().indices("zeebe-*").source(builder);
+
+                    SearchResponse response = esClient.search(searchRequest, RequestOptions.DEFAULT);
+
+                    JSONArray processInstanceKey = new JSONArray();
+
+                    String r = response.toString();
+                    JSONObject res = new JSONObject(r);
+                    JSONArray buckets = res.getJSONObject("aggregations").getJSONObject("lterms#1")
+                            .getJSONArray("buckets");
+
+                    buckets.forEach(elm -> {
+                        JSONObject bucket = (JSONObject) elm;
+                        Long key = bucket.getLong("key");
+
+                        processInstanceKey.put(key);
+                    });
+
+                    String responseToBeReturned = cancelWorkflow(processInstanceKey);
+
+
+                    exchange.getMessage().setBody(responseToBeReturned);
+                });
+
+
+        /**
          * Starts a workflow with the set of variables passed as body parameters
          *
          * method: [POST]
@@ -186,35 +249,9 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                     JSONObject object = new JSONObject(exchange.getIn().getBody(String.class));
                     JSONArray processIds = object.getJSONArray("processId");
 
-                    JSONArray success = new JSONArray();
-                    JSONArray failed = new JSONArray();
+                    String response = cancelWorkflow(processIds);
 
-                    AtomicInteger successfullyCancelled = new AtomicInteger();
-                    AtomicInteger cancellationFailed = new AtomicInteger();
-
-
-                    processIds.forEach(elm -> {
-                        long processId = Long.parseLong(elm.toString());
-
-                        try {
-                            zeebeClient.newCancelInstanceCommand(processId).send().join();
-                            success.put(processId);
-                            successfullyCancelled.getAndIncrement();
-                        }catch (Exception e) {
-                            failed.put(processId);
-                            cancellationFailed.getAndIncrement();
-                            logger.error("Cancellation of process id " + processId + " failed\n" + e.getMessage());
-                        }
-
-                    });
-
-                    JSONObject response = new JSONObject();
-                    response.put("success", success);
-                    response.put("failed", failed);
-                    response.put("cancellationSuccessful", successfullyCancelled.get());
-                    response.put("cancellationFailed", cancellationFailed.get());
-
-                    exchange.getMessage().setBody(response.toString());
+                    exchange.getMessage().setBody(response);
                 });
 
 
@@ -418,10 +455,10 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
 
         BoolQueryBuilder query = QueryBuilders.boolQuery()
                 .filter(QueryBuilders.boolQuery()
-                        .should(getMatchPhraseQueryBuilder("intent", "ELEMENT_ACTIVATED"))
-                        .should(getMatchPhraseQueryBuilder("intent", "ELEMENT_ACTIVATING"))
+                        .should(QueryBuilders.matchPhraseQuery("intent", "ELEMENT_ACTIVATED"))
+                        .should(QueryBuilders.matchPhraseQuery("intent", "ELEMENT_ACTIVATING"))
                         .minimumShouldMatch(1))
-                        .mustNot(getMatchPhraseQueryBuilder("intent", "ELEMENT_COMPLETED"))
+                        .mustNot(QueryBuilders.matchPhraseQuery("intent", "ELEMENT_COMPLETED"))
                 .filter(QueryBuilders.matchPhraseQuery("value.processDefinitionKey", processInstanceKey));
 
         SearchSourceBuilder builder = new SearchSourceBuilder().aggregation(definitionNameAggregation)
@@ -444,7 +481,31 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
         return ((JSONObject) keyBucket.get(0)).getString("key");
     }
 
-    private QueryBuilder getMatchPhraseQueryBuilder(String key, String valueToMatch) {
-        return QueryBuilders.matchPhraseQuery(key, valueToMatch);
+    private String cancelWorkflow(JSONArray processIds) {
+        JSONArray success = new JSONArray();
+        JSONArray failed = new JSONArray();
+        AtomicInteger successfullyCancelled = new AtomicInteger();
+        AtomicInteger cancellationFailed = new AtomicInteger();
+
+        processIds.forEach(elm -> {
+            long processId = Long.parseLong(elm.toString());
+
+            try {
+                zeebeClient.newCancelInstanceCommand(processId).send().join();
+                success.put(processId);
+                successfullyCancelled.getAndIncrement();
+            }catch (Exception e) {
+                failed.put(processId);
+                cancellationFailed.getAndIncrement();
+                logger.error("Cancellation of process id " + processId + " failed\n" + e.getMessage());
+            }
+        });
+        JSONObject response = new JSONObject();
+        response.put("success", success);
+        response.put("failed", failed);
+        response.put("cancellationSuccessful", successfullyCancelled.get());
+        response.put("cancellationFailed", cancellationFailed.get());
+
+        return response.toString();
     }
 }
