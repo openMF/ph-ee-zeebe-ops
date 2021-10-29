@@ -1,6 +1,7 @@
 package org.mifos.ops.zeebe.camel.routes;
 
 import io.camunda.zeebe.client.ZeebeClient;
+import org.apache.camel.Exchange;
 import org.apache.camel.LoggingLevel;
 import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
@@ -18,6 +19,7 @@ import org.slf4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.mifos.connector.common.camel.ErrorHandlerRouteBuilder;
+import java.io.IOException;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
@@ -41,19 +43,19 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
     public void configure() {
 
         /**
-         * Get the process variables by process definition and instance key
+        * Get the process variables by process definition and instance key
          *
          * demo url: localhost:5000/channel/process/variable/2251799813685998/2251799815797845
-         * here [2251799813685998] is the value for path parameter [PROCESS_DEFINITION_KEY] and
-         * [2251799815797845] is the value fot the path parameter [PROCESS_INSTANCE_KEY]
-         *
+                * here [2251799813685998] is the value for path parameter [PROCESS_DEFINITION_KEY] and
+                * [2251799815797845] is the value fot the path parameter [PROCESS_INSTANCE_KEY]
+                *
          * example response: {
          *   "note": "null",
          *   "fileName": "\"1634027804607_1634027804607request_temp.csv\"",
          *   "requestId": "\"00bbb830399242c1bd813c3b7cab6232\"",
          *   "batchId": "\"024ca343-caf5-434f-b428-55998be9b58a\"",
          *   "originDate": "1634027804733"
-         * }
+                    * }
          */
         from(String.format("rest:get:/channel/process/{%s}/task/{%s}/variable/", PROCESS_DEFINITION_KEY, PROCESS_INSTANCE_KEY))
                 .id("get-process-variable")
@@ -100,7 +102,269 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                     });
 
                     exchange.getMessage().setBody(responseToBeReturned.toString());
+
                 });
+
+        /**
+         * Cancellation of the process by variable name and value
+         *
+         * sample request: {
+         * 	"key": "initiatorFspId",
+         * 	"value": "\"ibank-usa\""
+         * }
+         *
+         * sample response: {
+         *   "cancellationSuccessful": 0,
+         *   "cancellationFailed": 1,
+         *   "success": [],
+         *   "failed": [
+         *     2251799813686414
+         *   ]
+         * }
+         *
+         */
+        from("rest:POST:/channel/workflow/cancelbyvalue")
+                .id("cancel-workflow")
+                .log(LoggingLevel.INFO, "## Cancelling the process by matching variable name and value")
+                .process(exchange -> {
+
+                    JSONObject object = new JSONObject(exchange.getIn().getBody(String.class));
+                    String key = object.getString("key");
+                    Object value = object.get("value");
+
+                    TermsAggregationBuilder definitionNameAggregation = AggregationBuilders.terms("1")
+                            .field("value.processDefinitionKey")
+                            .size(5);
+
+                    BoolQueryBuilder query = QueryBuilders.boolQuery()
+                            .filter(QueryBuilders.matchPhraseQuery("value.name", key))
+                            .filter(QueryBuilders.matchPhraseQuery("value.value", value));
+
+                    SearchSourceBuilder builder = new SearchSourceBuilder().aggregation(definitionNameAggregation)
+                            .query(query);
+
+                    SearchRequest searchRequest =
+                            new SearchRequest().indices("zeebe-*").source(builder);
+
+                    SearchResponse response = esClient.search(searchRequest, RequestOptions.DEFAULT);
+
+                    String r = response.toString();
+                    JSONObject res = new JSONObject(r);
+                    JSONArray processDefinitionKeysObject = res.getJSONObject("aggregations").getJSONObject("lterms#1")
+                            .getJSONArray("buckets");
+
+                    JSONArray processIds = new JSONArray();
+
+                    processDefinitionKeysObject.forEach(elm -> {
+                        long processId = ((JSONObject) elm).getLong("key");
+                        processIds.put(processId);
+                    });
+
+                    JSONObject responseToBeReturned = cancelProcess(processIds);
+
+                    exchange.getMessage().setBody(responseToBeReturned.toString());
+
+                });
+
+        /**
+         * Get the list of tasks that are already executed, by process definition key
+         *
+         * sample url:
+         * localhost:5000/channel/task/2251799813686414
+         *
+         * sample response: {
+         *   "tasks": [
+         *     ""
+         *   ]
+         * }
+         */
+        from(String.format("rest:get:/channel/process/{%s}/task/", PROCESS_DEFINITION_KEY))
+                .id("get-executed-task")
+                .log(LoggingLevel.INFO, "## Fetching the executed task")
+                .process(exchange -> {
+
+                    Long processInstanceKey = exchange.getIn().getHeader(PROCESS_DEFINITION_KEY, Long.class);
+
+                    TermsAggregationBuilder definitionNameAggregation = AggregationBuilders.terms("worker")
+                            .field("value.worker")
+                            .size(5);
+
+                    BoolQueryBuilder query = QueryBuilders.boolQuery()
+                            .filter(QueryBuilders.matchPhraseQuery("intent", "ELEMENT_COMPLETED"))
+                            .filter(QueryBuilders.matchPhraseQuery("value.processDefinitionKey", processInstanceKey));
+
+                    SearchSourceBuilder builder = new SearchSourceBuilder().aggregation(definitionNameAggregation)
+                            .query(query);
+
+                    SearchRequest searchRequest =
+                            new SearchRequest().indices("zeebe-*").source(builder);
+
+                    SearchResponse response = esClient.search(searchRequest, RequestOptions.DEFAULT);
+
+                    String r = response.toString();
+                    JSONObject res = new JSONObject(r);
+                    JSONArray keyBucket = res.getJSONObject("aggregations").getJSONObject("sterms#worker")
+                            .getJSONArray("buckets");
+
+                    JSONObject responseToBeReturned = new JSONObject();
+                    JSONArray taskList = new JSONArray();
+
+                    keyBucket.forEach(elm -> {
+                        JSONObject task = (JSONObject) elm;
+                        taskList.put(task.getString("key"));
+                    });
+                    responseToBeReturned.put("tasks", taskList);
+
+                    exchange.getMessage().setBody(responseToBeReturned.toString());
+                });
+
+        /**
+         * Get the process variables by process instance key
+         *
+         * demo url: /channel/process/variable/2251799813783649
+         * here [2251799813783649] is the value for path parameter [PROCESS_INSTANCE_KEY]
+         *
+         * example response: {
+         * "isRtpRequest":"false",
+         * "initiatorFspId":"\"ibank-usa\"",
+         * "originDate":"1633441154238"
+         * }
+         */
+        from(String.format("rest:get:/channel/process/variable/{%s}", PROCESS_INSTANCE_KEY))
+                .id("get-process-variable")
+                .log(LoggingLevel.INFO, "## Fetch process variable")
+                .process(exchange -> {
+                    Long processId = exchange.getIn().getHeader(PROCESS_INSTANCE_KEY, Long.class);
+
+                    TermsAggregationBuilder valueAgg = AggregationBuilders.terms("value")
+                            .field("value.value")
+                            .size(100);
+                    TermsAggregationBuilder nameAgg = AggregationBuilders.terms("key")
+                            .field("value.name")
+                            .size(100)
+                            .subAggregation(valueAgg);
+
+                    SearchSourceBuilder builder = new SearchSourceBuilder().aggregation(nameAgg)
+                            .query(QueryBuilders.matchQuery("value.processInstanceKey", processId));
+
+                    SearchRequest searchRequest =
+                            new SearchRequest().indices("zeebe-*").source(builder);
+
+                    SearchResponse response = esClient.search(searchRequest, RequestOptions.DEFAULT);
+
+                    JSONObject responseToBeReturned = new JSONObject();
+
+                    String r = response.toString();
+                    JSONObject res = new JSONObject(r);
+                    JSONArray keyBucket = res.getJSONObject("aggregations").getJSONObject("sterms#key")
+                            .getJSONArray("buckets");
+
+                    keyBucket.forEach(elm -> {
+                        JSONObject bucket = (JSONObject) elm;
+                        String key = bucket.getString("key");
+                        Object value = ((JSONObject)bucket.getJSONObject("sterms#value").getJSONArray("buckets")
+                                .get(0)).get("key");
+
+                        responseToBeReturned.put(key, value);
+                    });
+
+                    exchange.getMessage().setBody(responseToBeReturned.toString());
+
+                });
+
+        /**
+         * Get the process current state and variables by process instance id
+         *
+         * demo url: /channel/process/variable/2251799813686414
+         * here [2251799813686414] is the value for path parameter [PROCESS_INSTANCE_ID]
+         *
+         * example response: {
+         *   "currentState": "",
+         *   "processVariables": {}
+         * }
+         */
+        from(String.format("rest:get:/channel/process/{%s}", PROCESS_DEFINITION_KEY))
+                .id("get-process-variable")
+                .log(LoggingLevel.INFO, "## Fetch process variable and current state")
+                .process(exchange -> {
+
+                    Long processInstanceKey = exchange.getIn().getHeader(PROCESS_DEFINITION_KEY, Long.class);
+
+                    try {
+                        JSONObject processVariables = getProcessVariable(processInstanceKey);
+                        String state = getCurrentState(processInstanceKey);
+                        JSONObject responseToBeReturned = new JSONObject();
+                        responseToBeReturned.put("currentState", state);
+                        responseToBeReturned.put("processVariables", processVariables);
+                        exchange.getMessage().setBody(responseToBeReturned.toString());
+                    } catch (Exception e) {
+                        exchange.getMessage().setHeader(Exchange.HTTP_RESPONSE_CODE, 404);
+                        exchange.getMessage().setBody(e.toString());
+                    }
+                });
+
+        /**
+         * Cancel the workflow in specific state and having retry count greater than the passed value
+         *
+         * request body: {
+         *     "state": "Activity_1m5hpl9",
+         *     "retries": 12
+         * }
+         *
+         * sample resonse: {
+         *   "cancellationSuccessful": 0,
+         *   "cancellationFailed": 4,
+         *   "success": [],
+         *   "failed": [
+         *     2251799813776442,
+         *     2251799813779803,
+         *     2251799813783649,
+         *     2251799813686416
+         *   ]
+         * }
+         */
+        from("rest:POST:channel/workflow/cancel")
+                .id("cancel-workflow-by-state")
+                .log(LoggingLevel.INFO, "## Starting new workflow")
+                .process(exchange -> {
+
+                    JSONObject requestBody = new JSONObject(exchange.getIn().getBody(String.class));
+                    String state = requestBody.getString("state");
+                    Long retryCount = requestBody.getLong("retries");
+
+                    TermsAggregationBuilder nameAgg = AggregationBuilders.terms("1")
+                            .field("value.processInstanceKey")
+                            .size(10);
+
+                    SearchSourceBuilder builder = new SearchSourceBuilder().aggregation(nameAgg)
+                            .query(QueryBuilders.matchQuery("value.elementId", state))
+                            .query(QueryBuilders.rangeQuery("value.retries").gte(retryCount));
+
+                    SearchRequest searchRequest =
+                            new SearchRequest().indices("zeebe-*").source(builder);
+
+                    SearchResponse response = esClient.search(searchRequest, RequestOptions.DEFAULT);
+
+                    JSONArray processInstanceKey = new JSONArray();
+
+                    String r = response.toString();
+                    JSONObject res = new JSONObject(r);
+                    JSONArray buckets = res.getJSONObject("aggregations").getJSONObject("lterms#1")
+                            .getJSONArray("buckets");
+
+                    buckets.forEach(elm -> {
+                        JSONObject bucket = (JSONObject) elm;
+                        Long key = bucket.getLong("key");
+
+                        processInstanceKey.put(key);
+                    });
+
+                    String responseToBeReturned = cancelWorkflow(processInstanceKey);
+
+
+                    exchange.getMessage().setBody(responseToBeReturned);
+                });
+
 
         /**
          * Starts a workflow with the set of variables passed as body parameters
@@ -160,33 +424,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                     JSONObject object = new JSONObject(exchange.getIn().getBody(String.class));
                     JSONArray processIds = object.getJSONArray("processId");
 
-                    JSONArray success = new JSONArray();
-                    JSONArray failed = new JSONArray();
-
-                    AtomicInteger successfullyCancelled = new AtomicInteger();
-                    AtomicInteger cancellationFailed = new AtomicInteger();
-
-
-                    processIds.forEach(elm -> {
-                        long processId = Long.parseLong(elm.toString());
-
-                        try {
-                            zeebeClient.newCancelInstanceCommand(processId).send().join();
-                            success.put(processId);
-                            successfullyCancelled.getAndIncrement();
-                        }catch (Exception e) {
-                            failed.put(processId);
-                            cancellationFailed.getAndIncrement();
-                            logger.error("Cancellation of process id " + processId + " failed\n" + e.getMessage());
-                        }
-
-                    });
-
-                    JSONObject response = new JSONObject();
-                    response.put("success", success);
-                    response.put("failed", failed);
-                    response.put("cancellationSuccessful", successfullyCancelled.get());
-                    response.put("cancellationFailed", cancellationFailed.get());
+                    JSONObject response =cancelProcess(processIds);
 
                     exchange.getMessage().setBody(response.toString());
                 });
@@ -347,5 +585,134 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                         .join())
                 .setBody(constant(null));
 
+    }
+
+    private JSONObject getProcessVariable(Long processInstanceKey) throws IOException {
+        TermsAggregationBuilder valueAgg = AggregationBuilders.terms("value")
+                .field("value.value")
+                .size(100);
+        TermsAggregationBuilder nameAgg = AggregationBuilders.terms("key")
+                .field("value.name")
+                .size(100)
+                .subAggregation(valueAgg);
+
+        SearchSourceBuilder builder = new SearchSourceBuilder().aggregation(nameAgg)
+                .query(QueryBuilders.matchQuery("value.processInstanceKey", processInstanceKey));
+
+        SearchRequest searchRequest =
+                new SearchRequest().indices("zeebe-*").source(builder);
+
+        SearchResponse response = esClient.search(searchRequest, RequestOptions.DEFAULT);
+
+        JSONObject responseToBeReturned = new JSONObject();
+
+        String r = response.toString();
+        JSONObject res = new JSONObject(r);
+        JSONArray keyBucket = res.getJSONObject("aggregations").getJSONObject("sterms#key")
+                .getJSONArray("buckets");
+
+        keyBucket.forEach(elm -> {
+            JSONObject bucket = (JSONObject) elm;
+            String key = bucket.getString("key");
+            Object value = ((JSONObject)bucket.getJSONObject("sterms#value").getJSONArray("buckets")
+                    .get(0)).get("key");
+
+            responseToBeReturned.put(key, value);
+        });
+
+        return responseToBeReturned;
+    }
+
+    private String getCurrentState(Long processInstanceKey) throws Exception {
+        TermsAggregationBuilder definitionNameAggregation = AggregationBuilders.terms("worker")
+                .field("value.worker")
+                .size(5);
+
+        BoolQueryBuilder query = QueryBuilders.boolQuery()
+                .filter(QueryBuilders.boolQuery()
+                        .should(QueryBuilders.matchPhraseQuery("intent", "ELEMENT_ACTIVATED"))
+                        .should(QueryBuilders.matchPhraseQuery("intent", "ELEMENT_ACTIVATING"))
+                        .minimumShouldMatch(1))
+                        .mustNot(QueryBuilders.matchPhraseQuery("intent", "ELEMENT_COMPLETED"))
+                .filter(QueryBuilders.matchPhraseQuery("value.processDefinitionKey", processInstanceKey));
+
+        SearchSourceBuilder builder = new SearchSourceBuilder().aggregation(definitionNameAggregation)
+                .query(query);
+
+        SearchRequest searchRequest =
+                new SearchRequest().indices("zeebe-*").source(builder);
+
+        SearchResponse response = esClient.search(searchRequest, RequestOptions.DEFAULT);
+
+        String r = response.toString();
+        JSONObject res = new JSONObject(r);
+        JSONArray keyBucket = res.getJSONObject("aggregations").getJSONObject("sterms#worker")
+                .getJSONArray("buckets");
+
+        if(keyBucket.isEmpty()) {
+            throw new Exception("Unable to fetch current state");
+        }
+
+        return ((JSONObject) keyBucket.get(0)).getString("key");
+    }
+
+    private String cancelWorkflow(JSONArray processIds) {
+        JSONArray success = new JSONArray();
+        JSONArray failed = new JSONArray();
+        AtomicInteger successfullyCancelled = new AtomicInteger();
+        AtomicInteger cancellationFailed = new AtomicInteger();
+
+        processIds.forEach(elm -> {
+            long processId = Long.parseLong(elm.toString());
+
+            try {
+                zeebeClient.newCancelInstanceCommand(processId).send().join();
+                success.put(processId);
+                successfullyCancelled.getAndIncrement();
+            }catch (Exception e) {
+                failed.put(processId);
+                cancellationFailed.getAndIncrement();
+                logger.error("Cancellation of process id " + processId + " failed\n" + e.getMessage());
+            }
+        });
+        JSONObject response = new JSONObject();
+        response.put("success", success);
+        response.put("failed", failed);
+        response.put("cancellationSuccessful", successfullyCancelled.get());
+        response.put("cancellationFailed", cancellationFailed.get());
+
+        return response.toString();
+    }
+
+    private JSONObject cancelProcess(JSONArray processIds) {
+        JSONArray success = new JSONArray();
+        JSONArray failed = new JSONArray();
+
+        AtomicInteger successfullyCancelled = new AtomicInteger();
+        AtomicInteger cancellationFailed = new AtomicInteger();
+
+
+        processIds.forEach(elm -> {
+            long processId = Long.parseLong(elm.toString());
+
+            try {
+                zeebeClient.newCancelInstanceCommand(processId).send().join();
+                success.put(processId);
+                successfullyCancelled.getAndIncrement();
+            }catch (Exception e) {
+                failed.put(processId);
+                cancellationFailed.getAndIncrement();
+                logger.error("Cancellation of process id " + processId + " failed\n" + e.getMessage());
+            }
+
+        });
+
+        JSONObject response = new JSONObject();
+        response.put("success", success);
+        response.put("failed", failed);
+        response.put("cancellationSuccessful", successfullyCancelled.get());
+        response.put("cancellationFailed", cancellationFailed.get());
+
+        return response;
     }
 }
