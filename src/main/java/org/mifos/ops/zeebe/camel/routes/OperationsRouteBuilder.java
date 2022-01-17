@@ -223,7 +223,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
          * }
          */
         from(String.format("rest:get:/channel/process/{%s}", PROCESS_DEFINITION_KEY))
-                .id("get-process-variable")
+                .id("get-process-variable-and-state")
                 .log(LoggingLevel.INFO, "## Fetch process variable and current state")
                 .process(exchange -> {
 
