@@ -24,6 +24,8 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-data-elasticsearch'
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'javax.mail:mail:1.4.7'
+    implementation 'org.json:json:20190722'
+
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
 }
 
