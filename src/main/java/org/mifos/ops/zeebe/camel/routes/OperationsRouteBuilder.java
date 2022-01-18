@@ -49,15 +49,13 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
     @Override
     public void configure() {
 
+        /*
+         * Use this endpoint for uploading the bpmns
+         */
         from("rest:POST:/zeebe/upload")
                 .id("upload-bpmn")
                 .log(LoggingLevel.INFO, "## Uploading the bpmn to zeebe")
                 .process(exchange -> {
-                    /*MultipartFile file = exchange.getIn().getBody(MultipartFile.class);
-                    Map<String, DataHandler> attachments = exchange.getIn(AttachmentMessage.class).getAttachments();
-                    byte[] bytes = attachments.get("mpesa-flow.bpmn").getInputStream().readAllBytes();
-                    exchange.getIn().setBody(bytes);*/
-
                     InputStream is = exchange.getIn().getBody(InputStream.class);
                     MimeBodyPart mimeMessage = new MimeBodyPart(is);
                     DataHandler dh = mimeMessage.getDataHandler();
