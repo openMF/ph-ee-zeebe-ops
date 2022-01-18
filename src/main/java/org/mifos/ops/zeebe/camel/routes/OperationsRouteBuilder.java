@@ -1,6 +1,7 @@
 package org.mifos.ops.zeebe.camel.routes;
 
 import io.camunda.zeebe.client.ZeebeClient;
+import io.camunda.zeebe.client.api.response.DeploymentEvent;
 import org.apache.camel.Exchange;
 import org.apache.camel.LoggingLevel;
 import org.elasticsearch.action.search.SearchRequest;
@@ -20,7 +21,12 @@ import org.slf4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.mifos.connector.common.camel.ErrorHandlerRouteBuilder;
+import org.springframework.web.multipart.MultipartFile;
+
+import javax.activation.DataHandler;
+import javax.mail.internet.MimeBodyPart;
 import java.io.IOException;
+import java.io.InputStream;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
@@ -42,6 +48,33 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
 
     @Override
     public void configure() {
+
+        from("rest:POST:/zeebe/upload")
+                .id("upload-bpmn")
+                .log(LoggingLevel.INFO, "## Uploading the bpmn to zeebe")
+                .process(exchange -> {
+                    /*MultipartFile file = exchange.getIn().getBody(MultipartFile.class);
+                    Map<String, DataHandler> attachments = exchange.getIn(AttachmentMessage.class).getAttachments();
+                    byte[] bytes = attachments.get("mpesa-flow.bpmn").getInputStream().readAllBytes();
+                    exchange.getIn().setBody(bytes);*/
+
+                    InputStream is = exchange.getIn().getBody(InputStream.class);
+                    MimeBodyPart mimeMessage = new MimeBodyPart(is);
+                    DataHandler dh = mimeMessage.getDataHandler();
+                    //exchange.getIn().setBody(dh.getInputStream());
+                    exchange.getIn().setHeader(Exchange.FILE_NAME, dh.getName());
+                    exchange.setProperty("BPMN_FILE_NAME", dh.getName());
+                    logger.info("\n\n\n " + dh.getName() + "\n\n\n");
+
+                })
+                .to("file:upload")
+                .process(exchange -> {
+                    String bpmnFileName = exchange.getProperty("BPMN_FILE_NAME", String.class);
+                    DeploymentEvent deploymentEvent =
+                    zeebeClient.newDeployCommand().addResourceFile("upload/"+bpmnFileName)
+                            .send().join();
+                    exchange.getIn().setBody("Deployment created with key: " + deploymentEvent.getKey());
+                });
 
         /**
          * Cancellation of the process by variable name and value
