@@ -23,6 +23,7 @@ dependencies {
     implementation 'io.netty:netty-bom:4.1.65.Final'
     implementation 'org.springframework.boot:spring-boot-starter-data-elasticsearch'
     implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'javax.mail:mail:1.4.7'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
 }
 
