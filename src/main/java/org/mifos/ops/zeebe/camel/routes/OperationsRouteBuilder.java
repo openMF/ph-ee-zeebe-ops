@@ -25,8 +25,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import javax.activation.DataHandler;
 import javax.mail.internet.MimeBodyPart;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
@@ -46,8 +45,22 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
     @Autowired
     private RestHighLevelClient esClient;
 
+    private void removeLastLine(String fileName) throws IOException {
+        RandomAccessFile f = new RandomAccessFile(fileName, "rw");
+        long length = f.length() - 1;
+        byte b;
+        do {
+            length -= 1;
+            f.seek(length);
+            b = f.readByte();
+        } while(b != 10);
+        f.setLength(length+1);
+        f.close();
+    }
+
     @Override
     public void configure() {
+
 
         /*
          * Use this endpoint for uploading the bpmns
@@ -59,7 +72,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                     InputStream is = exchange.getIn().getBody(InputStream.class);
                     MimeBodyPart mimeMessage = new MimeBodyPart(is);
                     DataHandler dh = mimeMessage.getDataHandler();
-                    //exchange.getIn().setBody(dh.getInputStream());
+                    exchange.getIn().setBody(dh.getInputStream());
                     exchange.getIn().setHeader(Exchange.FILE_NAME, dh.getName());
                     exchange.setProperty("BPMN_FILE_NAME", dh.getName());
                     logger.info("\n\n\n " + dh.getName() + "\n\n\n");
@@ -68,10 +81,22 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                 .to("file:upload")
                 .process(exchange -> {
                     String bpmnFileName = exchange.getProperty("BPMN_FILE_NAME", String.class);
+                    String fileName = "upload/"+bpmnFileName;
+
+                    // file formatting
+                    removeLastLine(fileName);
+
+                    // deploying
                     DeploymentEvent deploymentEvent =
                     zeebeClient.newDeployCommand().addResourceFile("upload/"+bpmnFileName)
                             .send().join();
                     exchange.getIn().setBody("Deployment created with key: " + deploymentEvent.getKey());
+                    logger.info("Deployment created with key: " + deploymentEvent.getKey());
+
+                    // deleting bpmn file
+                    File file = new File(fileName);
+                    file.delete();
+                    logger.info("Deleted file " + fileName + "after successful deployment");
                 });
 
         /**
