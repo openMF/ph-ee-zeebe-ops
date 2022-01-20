@@ -164,7 +164,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
          * Get the list of tasks that are already executed, by process definition key
          *
          * sample url:
-         * localhost:5000/channel/task/2251799813686414
+         * localhost:5000/channel/process/2251799813686414/task/
          *
          * sample response: {
          *   "tasks": [
@@ -424,7 +424,9 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                     exchange.getMessage().setBody(response.toString());
                 });
 
-
+        /**
+         * Get the health of the elastic search cluster
+         */
         from("rest:get:/es/health")
                 .id("es-test")
                 .log(LoggingLevel.INFO, "## Testing es connection")
@@ -572,6 +574,9 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                 })
                 .setBody(constant(null));
 
+        /**
+         * Cancel a workflow by workflow instance key
+         */
         from("rest:POST:/channel/workflow/{workflowInstanceKey}/cancel")
                 .id("workflow-cancel")
                 .log(LoggingLevel.INFO, "## operator workflow cancel ${header.workflowInstanceKey}")
