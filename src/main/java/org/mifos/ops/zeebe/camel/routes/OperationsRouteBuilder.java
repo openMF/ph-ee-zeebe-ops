@@ -270,7 +270,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
         /**
          * Get the process current state and variables by process instance id
          *
-         * demo url: /channel/process/variable/2251799813686414
+         * demo url: /channel/process/2251799813686414
          * here [2251799813686414] is the value for path parameter [PROCESS_INSTANCE_ID]
          *
          * example response: {
@@ -320,7 +320,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
          */
         from("rest:POST:channel/workflow/cancel")
                 .id("cancel-workflow-by-state")
-                .log(LoggingLevel.INFO, "## Starting new workflow")
+                .log(LoggingLevel.INFO, "## Canceling the workflow")
                 .process(exchange -> {
 
                     JSONObject requestBody = new JSONObject(exchange.getIn().getBody(String.class));
