@@ -25,8 +25,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import javax.activation.DataHandler;
 import javax.mail.internet.MimeBodyPart;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
@@ -46,8 +45,22 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
     @Autowired
     private RestHighLevelClient esClient;
 
+    private void removeLastLine(String fileName) throws IOException {
+        RandomAccessFile f = new RandomAccessFile(fileName, "rw");
+        long length = f.length() - 1;
+        byte b;
+        do {
+            length -= 1;
+            f.seek(length);
+            b = f.readByte();
+        } while(b != 10);
+        f.setLength(length+1);
+        f.close();
+    }
+
     @Override
     public void configure() {
+
 
         /*
          * Use this endpoint for uploading the bpmns
@@ -59,7 +72,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                     InputStream is = exchange.getIn().getBody(InputStream.class);
                     MimeBodyPart mimeMessage = new MimeBodyPart(is);
                     DataHandler dh = mimeMessage.getDataHandler();
-                    //exchange.getIn().setBody(dh.getInputStream());
+                    exchange.getIn().setBody(dh.getInputStream());
                     exchange.getIn().setHeader(Exchange.FILE_NAME, dh.getName());
                     exchange.setProperty("BPMN_FILE_NAME", dh.getName());
                     logger.info("\n\n\n " + dh.getName() + "\n\n\n");
@@ -68,10 +81,22 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                 .to("file:upload")
                 .process(exchange -> {
                     String bpmnFileName = exchange.getProperty("BPMN_FILE_NAME", String.class);
+                    String fileName = "upload/"+bpmnFileName;
+
+                    // file formatting
+                    removeLastLine(fileName);
+
+                    // deploying
                     DeploymentEvent deploymentEvent =
                     zeebeClient.newDeployCommand().addResourceFile("upload/"+bpmnFileName)
                             .send().join();
                     exchange.getIn().setBody("Deployment created with key: " + deploymentEvent.getKey());
+                    logger.info("Deployment created with key: " + deploymentEvent.getKey());
+
+                    // deleting bpmn file
+                    File file = new File(fileName);
+                    file.delete();
+                    logger.info("Deleted file " + fileName + "after successful deployment");
                 });
 
         /**
@@ -139,7 +164,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
          * Get the list of tasks that are already executed, by process definition key
          *
          * sample url:
-         * localhost:5000/channel/task/2251799813686414
+         * localhost:5000/channel/process/2251799813686414/task/
          *
          * sample response: {
          *   "tasks": [
@@ -245,7 +270,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
         /**
          * Get the process current state and variables by process instance id
          *
-         * demo url: /channel/process/variable/2251799813686414
+         * demo url: /channel/process/2251799813686414
          * here [2251799813686414] is the value for path parameter [PROCESS_INSTANCE_ID]
          *
          * example response: {
@@ -295,7 +320,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
          */
         from("rest:POST:channel/workflow/cancel")
                 .id("cancel-workflow-by-state")
-                .log(LoggingLevel.INFO, "## Starting new workflow")
+                .log(LoggingLevel.INFO, "## Canceling the workflow")
                 .process(exchange -> {
 
                     JSONObject requestBody = new JSONObject(exchange.getIn().getBody(String.class));
@@ -399,7 +424,9 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                     exchange.getMessage().setBody(response.toString());
                 });
 
-
+        /**
+         * Get the health of the elastic search cluster
+         */
         from("rest:get:/es/health")
                 .id("es-test")
                 .log(LoggingLevel.INFO, "## Testing es connection")
@@ -547,6 +574,9 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                 })
                 .setBody(constant(null));
 
+        /**
+         * Cancel a workflow by workflow instance key
+         */
         from("rest:POST:/channel/workflow/{workflowInstanceKey}/cancel")
                 .id("workflow-cancel")
                 .log(LoggingLevel.INFO, "## operator workflow cancel ${header.workflowInstanceKey}")
