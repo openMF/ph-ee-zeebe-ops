@@ -11,6 +11,9 @@ sourceCompatibility = '11'
 repositories {
     mavenCentral()
     mavenLocal()
+    maven {
+        url = uri('https://fynarfin.jfrog.io/artifactory/fyn-libs-snapshot-local/')
+    }
 }
 
 dependencies {
