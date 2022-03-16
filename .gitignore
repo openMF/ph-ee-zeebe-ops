@@ -36,5 +36,8 @@ out/
 ### VS Code ###
 .vscode/
 
+### mac ###
+.DS_Store
+
 ### BPMN upload location ###
 upload
