@@ -129,7 +129,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                                 zeebeClient.newDeployCommand().addResourceFile(path)
                                         .send().join();
                         new File(path).delete();
-                        response.append(String.format("\n{%s : %s}", path, 123));
+                        response.append(String.format("\n{%s : %s}", path, deploymentEvent.getKey()));
                     }
 
                     // deleting bpmn file
