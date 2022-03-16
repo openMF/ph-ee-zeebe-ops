@@ -6,6 +6,8 @@ camel:
     json-jackson:
       auto-discover-object-mapper: true
 
+tenants: "ibank-india,ibank-usa,oaf,tn01,tn03"
+
 zeebe:
   client:
     max-execution-threads: 100
@@ -16,4 +18,4 @@ zeebe:
 
 logging:
   level:
-    ROOT: ERROR
+    ROOT: INFO

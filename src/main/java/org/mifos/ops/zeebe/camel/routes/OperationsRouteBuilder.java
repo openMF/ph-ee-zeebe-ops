@@ -2,8 +2,13 @@ package org.mifos.ops.zeebe.camel.routes;
 
 import io.camunda.zeebe.client.ZeebeClient;
 import io.camunda.zeebe.client.api.response.DeploymentEvent;
+import io.camunda.zeebe.model.bpmn.Bpmn;
+import io.camunda.zeebe.model.bpmn.BpmnModelInstance;
+import io.camunda.zeebe.model.bpmn.instance.Definitions;
 import org.apache.camel.Exchange;
 import org.apache.camel.LoggingLevel;
+import org.camunda.bpm.model.xml.instance.DomDocument;
+import org.camunda.bpm.model.xml.instance.DomElement;
 import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.client.RequestOptions;
@@ -19,6 +24,7 @@ import org.elasticsearch.client.indices.GetIndexRequest;
 import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.mifos.connector.common.camel.ErrorHandlerRouteBuilder;
 import org.springframework.web.multipart.MultipartFile;
@@ -27,8 +33,7 @@ import javax.activation.DataHandler;
 import javax.mail.internet.MimeBodyPart;
 import java.io.*;
 import java.time.Duration;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import static org.mifos.ops.zeebe.zeebe.ZeebeMessages.OPERATOR_MANUAL_RECOVERY;
 import static org.mifos.ops.zeebe.zeebe.ZeebeVariables.*;
@@ -45,8 +50,12 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
     @Autowired
     private RestHighLevelClient esClient;
 
-    private void removeLastLine(String fileName) throws IOException {
-        RandomAccessFile f = new RandomAccessFile(fileName, "rw");
+    @Value("#{'${tenants}'.split(',')}")
+    private List<String> tenants;
+
+    private void removeLastLine(String bpmnFileName) throws IOException {
+        String filePath = "upload/"+bpmnFileName;
+        RandomAccessFile f = new RandomAccessFile(filePath, "rw");
         long length = f.length() - 1;
         byte b;
         do {
@@ -56,6 +65,33 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
         } while(b != 10);
         f.setLength(length+1);
         f.close();
+
+    }
+
+    private List<String> formatBpmn(String bpmnFileName) throws IOException {
+        removeLastLine(bpmnFileName);
+        String filePath = "upload/"+bpmnFileName;
+        BpmnModelInstance instance = Bpmn.readModelFromFile(new File(filePath));
+        String baseId = bpmnFileName.substring(0, bpmnFileName.indexOf("DFSPID")-1).replace("-", "_");
+
+        List<String> uploadingFilePath = new ArrayList<>();
+
+        for (String tenant: tenants) {
+            logger.info("Creating tenant specific: " + tenant);
+            String tenantSpecificId = String.format("%s-%s", baseId, tenant);
+            logger.info("tenantSpecificId: " + tenantSpecificId);
+            BpmnModelInstance tenantSpecificInstance = instance.clone();
+            DomDocument document = tenantSpecificInstance.getDocument();
+            DomElement processElement = document.getRootElement().getChildElements().get(0);
+            processElement.setAttribute("id", tenantSpecificId);
+            processElement.setAttribute("name", tenantSpecificId);
+            String fp = String.format("upload/%s.bpmn", tenantSpecificId);
+            Bpmn.writeModelToFile(new File(fp), tenantSpecificInstance);
+            Bpmn.validateModel(tenantSpecificInstance);
+            uploadingFilePath.add(fp);
+            logger.info("Done");
+        }
+        return uploadingFilePath;
     }
 
     @Override
@@ -81,22 +117,28 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                 .to("file:upload")
                 .process(exchange -> {
                     String bpmnFileName = exchange.getProperty("BPMN_FILE_NAME", String.class);
-                    String fileName = "upload/"+bpmnFileName;
+                    StringBuilder response = new StringBuilder();
+                    response.append("Deployment created with keys: ");
 
                     // file formatting
-                    removeLastLine(fileName);
+                    List<String> bpmnFilePaths = formatBpmn(bpmnFileName);
 
-                    // deploying
-                    DeploymentEvent deploymentEvent =
-                    zeebeClient.newDeployCommand().addResourceFile("upload/"+bpmnFileName)
-                            .send().join();
-                    exchange.getIn().setBody("Deployment created with key: " + deploymentEvent.getKey());
-                    logger.info("Deployment created with key: " + deploymentEvent.getKey());
+                    for(String path: bpmnFilePaths) {
+                        // deploying
+                        DeploymentEvent deploymentEvent =
+                                zeebeClient.newDeployCommand().addResourceFile(path)
+                                        .send().join();
+                        new File(path).delete();
+                        response.append(String.format("\n{%s : %s}", path, 123));
+                    }
 
                     // deleting bpmn file
-                    File file = new File(fileName);
+                    File file = new File("upload/"+bpmnFileName);
                     file.delete();
-                    logger.info("Deleted file " + fileName + "after successful deployment");
+                    logger.info("Deleted file " + "upload/"+bpmnFileName + "after successful deployment");
+
+                    exchange.getIn().setBody(response.toString());
+                    logger.info(response.toString());
                 });
 
         /**
