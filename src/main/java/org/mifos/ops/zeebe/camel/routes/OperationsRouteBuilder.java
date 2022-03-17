@@ -71,10 +71,15 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
     private List<String> formatBpmn(String bpmnFileName) throws IOException {
         removeLastLine(bpmnFileName);
         String filePath = "upload/"+bpmnFileName;
+        List<String> uploadingFilePath = new ArrayList<>();
+
+        if (!bpmnFileName.contains("DFSPID")) {
+            uploadingFilePath.add(filePath);
+            return uploadingFilePath;
+        }
+
         BpmnModelInstance instance = Bpmn.readModelFromFile(new File(filePath));
         String baseId = bpmnFileName.substring(0, bpmnFileName.indexOf("DFSPID")-1).replace("-", "_");
-
-        List<String> uploadingFilePath = new ArrayList<>();
 
         for (String tenant: tenants) {
             logger.info("Creating tenant specific: " + tenant);
