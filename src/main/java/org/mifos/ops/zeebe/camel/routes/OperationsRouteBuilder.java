@@ -14,7 +14,6 @@ import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.client.RequestOptions;
 import org.elasticsearch.client.RestHighLevelClient;
 import org.elasticsearch.index.query.BoolQueryBuilder;
-import org.elasticsearch.index.query.QueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.search.aggregations.AggregationBuilders;
 import org.elasticsearch.search.aggregations.bucket.terms.TermsAggregationBuilder;
@@ -147,6 +146,69 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                 });
 
         /**
+        * Get the process variables by process definition and instance key
+         *
+         * demo url: localhost:5000/channel/process/variable/2251799813685998/2251799815797845
+                * here [2251799813685998] is the value for path parameter [PROCESS_DEFINITION_KEY] and
+                * [2251799815797845] is the value fot the path parameter [PROCESS_INSTANCE_KEY]
+                *
+         * example response: {
+         *   "note": "null",
+         *   "fileName": "\"1634027804607_1634027804607request_temp.csv\"",
+         *   "requestId": "\"00bbb830399242c1bd813c3b7cab6232\"",
+         *   "batchId": "\"024ca343-caf5-434f-b428-55998be9b58a\"",
+         *   "originDate": "1634027804733"
+                    * }
+         */
+        from(String.format("rest:get:/channel/process/{%s}/task/{%s}/variable/", PROCESS_DEFINITION_KEY, PROCESS_INSTANCE_KEY))
+                .id("get-process-variable")
+                .log(LoggingLevel.INFO, "## Fetch process variable")
+                .process(exchange -> {
+
+                    Long processId = exchange.getIn().getHeader(PROCESS_DEFINITION_KEY, Long.class);
+                    Long taskId = exchange.getIn().getHeader(PROCESS_INSTANCE_KEY, Long.class);
+
+                    TermsAggregationBuilder valueAgg = AggregationBuilders.terms("value")
+                            .field("value.value")
+                            .size(5);
+                    TermsAggregationBuilder nameAgg = AggregationBuilders.terms("key")
+                            .field("value.name")
+                            .size(5)
+                            .subAggregation(valueAgg);
+
+                    BoolQueryBuilder query = QueryBuilders.boolQuery()
+                            .filter(QueryBuilders.matchPhraseQuery("value.processDefinitionKey", processId))
+                            .filter(QueryBuilders.matchPhraseQuery("value.processInstanceKey", taskId));
+
+                    SearchSourceBuilder builder = new SearchSourceBuilder().aggregation(nameAgg)
+                            .query(query);
+
+                    SearchRequest searchRequest =
+                            new SearchRequest().indices("zeebe-*").source(builder);
+
+                    SearchResponse response = esClient.search(searchRequest, RequestOptions.DEFAULT);
+
+                    JSONObject responseToBeReturned = new JSONObject();
+
+                    String r = response.toString();
+                    JSONObject res = new JSONObject(r);
+                    JSONArray keyBucket = res.getJSONObject("aggregations").getJSONObject("sterms#key")
+                            .getJSONArray("buckets");
+
+                    keyBucket.forEach(elm -> {
+                        JSONObject bucket = (JSONObject) elm;
+                        String key = bucket.getString("key");
+                        Object value = ((JSONObject)bucket.getJSONObject("sterms#value").getJSONArray("buckets")
+                                .get(0)).get("key");
+
+                        responseToBeReturned.put(key, value);
+                    });
+
+                    exchange.getMessage().setBody(responseToBeReturned.toString());
+
+                });
+
+        /**
          * Cancellation of the process by variable name and value
          *
          * sample request: {
@@ -275,7 +337,6 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                 .id("get-process-variable")
                 .log(LoggingLevel.INFO, "## Fetch process variable")
                 .process(exchange -> {
-
                     Long processId = exchange.getIn().getHeader(PROCESS_INSTANCE_KEY, Long.class);
 
                     TermsAggregationBuilder valueAgg = AggregationBuilders.terms("value")
