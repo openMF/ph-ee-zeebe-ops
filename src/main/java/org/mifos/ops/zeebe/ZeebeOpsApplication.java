@@ -5,6 +5,18 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import org.apache.http.HttpHost;
+import org.apache.http.auth.AuthScope;
+import org.apache.http.auth.UsernamePasswordCredentials;
+import org.apache.http.client.CredentialsProvider;
+import org.apache.http.conn.ssl.NoopHostnameVerifier;
+import org.apache.http.impl.client.BasicCredentialsProvider;
+import org.apache.http.impl.nio.client.HttpAsyncClientBuilder;
+import org.apache.http.impl.nio.reactor.IOReactorConfig;
+import org.apache.http.ssl.SSLContextBuilder;
+import org.apache.http.ssl.SSLContexts;
+import org.elasticsearch.client.RestClient;
+import org.elasticsearch.client.RestClientBuilder;
 import org.elasticsearch.client.RestHighLevelClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,11 +31,34 @@ import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 import org.springframework.data.elasticsearch.core.ElasticsearchRestTemplate;
 import org.springframework.web.client.RestTemplate;
 
+import javax.net.ssl.SSLContext;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.security.KeyManagementException;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+
 @SpringBootApplication
 public class ZeebeOpsApplication {
 
     @Value("${spring.data.elasticsearch.client.reactive.endpoints}")
     private String contactPoint;
+
+
+    @Value("${elasticsearch.security.enabled}")
+    private Boolean securityEnabled;
+
+    @Value("${elasticsearch.security.client.enabled}")
+    private Boolean clientEnabled;
+
+    @Value("${elasticsearch.username}")
+    private String username;
+
+    @Value("${elasticsearch.password}")
+    private String password;
+
+    @Value("${elasticsearch.url}")
+    private String elasticUrl;
 
     @Bean
     public ObjectMapper objectMapper() {
@@ -37,13 +72,79 @@ public class ZeebeOpsApplication {
     }
 
     @Bean
-    public RestHighLevelClient client() {
-        ClientConfiguration clientConfiguration
-                = ClientConfiguration.builder()
-                .connectedTo(contactPoint)
-                .build();
+     RestHighLevelClient client() {
+        RestClientBuilder builder = null;
+        SSLContext sslContext = null;
+        if(securityEnabled){
+            final CredentialsProvider credentialsProvider = new BasicCredentialsProvider();
+            credentialsProvider.setCredentials(AuthScope.ANY,
+                    new UsernamePasswordCredentials(username, password));
+            if(clientEnabled){
+                SSLContextBuilder sslBuilder = null;
+                try {
+                    sslBuilder = SSLContexts.custom()
+                            .loadTrustMaterial(null, (x509Certificates, s) -> true);
+                    sslContext = sslBuilder.build();
+                } catch (NoSuchAlgorithmException | KeyStoreException | KeyManagementException e) {
+                    e.printStackTrace();
+                }
 
-        return RestClients.create(clientConfiguration).rest();
+                HttpHost httpHost = urlToHttpHost(elasticUrl);
+
+                SSLContext finalSslContext = sslContext;
+                builder = RestClient.builder(httpHost)
+                        .setHttpClientConfigCallback(new RestClientBuilder.HttpClientConfigCallback() {
+                            @Override
+                            public HttpAsyncClientBuilder customizeHttpClient(HttpAsyncClientBuilder httpClientBuilder) {
+                                return httpClientBuilder
+                                        .setSSLContext(finalSslContext)
+                                        .setSSLHostnameVerifier(NoopHostnameVerifier.INSTANCE)
+                                        .setDefaultCredentialsProvider(credentialsProvider);
+                            }
+                        });
+            }
+        }
+        else {
+            HttpHost httpHost = urlToHttpHost(elasticUrl);
+
+            // use single thread for rest client
+            builder =
+                    RestClient.builder(httpHost).setHttpClientConfigCallback(this::setHttpClientConfigCallback);
+        }
+        return new RestHighLevelClient(builder);
+
+    }
+
+    private HttpAsyncClientBuilder setHttpClientConfigCallback(HttpAsyncClientBuilder builder) {
+        builder.setDefaultIOReactorConfig(IOReactorConfig.custom().setIoThreadCount(1).build());
+
+        // TODO authentication
+//        if (configuration.authentication.isPresent()) {
+//            setupBasicAuthentication(builder);
+//        }
+
+        return builder;
+    }
+
+//    private void setupBasicAuthentication(HttpAsyncClientBuilder builder) {
+//        CredentialsProvider credentialsProvider = new BasicCredentialsProvider();
+//        credentialsProvider.setCredentials(
+//                AuthScope.ANY,
+//                new UsernamePasswordCredentials(
+//                        configuration.authentication.username, configuration.authentication.password));
+//
+//        builder.setDefaultCredentialsProvider(credentialsProvider);
+//    }
+
+    private static HttpHost urlToHttpHost(String url) {
+        URI uri = null;
+        try {
+            uri = new URI(url);
+        } catch (URISyntaxException e) {
+            e.printStackTrace();
+        }
+
+        return new HttpHost(uri.getHost(), uri.getPort(), uri.getScheme());
     }
 
     @Bean

@@ -26,3 +26,14 @@ spring:
 logging:
   level:
     root: INFO
+
+
+
+elasticsearch:
+  url: "https://ph-ee-elasticsearch:9200/"
+  security:
+    enabled: true
+    client:
+      enabled: true
+  username: "elastic"
+  password: "rtr1Cyncv7kMAAhr6rEa"
