@@ -31,6 +31,7 @@ import org.mifos.connector.common.camel.ErrorHandlerRouteBuilder;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.activation.DataHandler;
+import javax.annotation.PostConstruct;
 import javax.mail.internet.MimeBodyPart;
 import java.io.*;
 import java.time.Duration;
@@ -51,6 +52,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
     @Autowired
     ZeebeOpsApplication zeebeOpsApplication;
 
+    @PostConstruct
     RestHighLevelClient esClient = zeebeOpsApplication.client();
 
 
