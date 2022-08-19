@@ -22,6 +22,7 @@ import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.json.JSONArray;
 import org.elasticsearch.client.indices.GetIndexRequest;
 import org.json.JSONObject;
+import org.mifos.ops.zeebe.ZeebeOpsApplication;
 import org.slf4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -48,7 +49,11 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
     private Logger logger;
 
     @Autowired
-    private RestHighLevelClient esClient;
+    ZeebeOpsApplication zeebeOpsApplication;
+
+    RestHighLevelClient esClient = zeebeOpsApplication.client();
+
+
 
     @Value("#{'${tenants}'.split(',')}")
     private List<String> tenants;
@@ -67,6 +72,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
         f.close();
 
     }
+
 
     private List<String> formatBpmn(String bpmnFileName) throws IOException {
         removeLastLine(bpmnFileName);

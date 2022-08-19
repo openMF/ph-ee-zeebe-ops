@@ -72,7 +72,7 @@ public class ZeebeOpsApplication {
     }
 
     @Bean
-     RestHighLevelClient client() {
+     public RestHighLevelClient client() {
         RestClientBuilder builder = null;
         SSLContext sslContext = null;
         if(securityEnabled){
