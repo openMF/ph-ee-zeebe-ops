@@ -30,7 +30,7 @@ logging:
 
 
 elasticsearch:
-  url: "https://ph-ee-elasticsearch:9200/"
+  url: "https://localhost:9200/"
   security:
     enabled: true
     client:
