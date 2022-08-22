@@ -33,7 +33,6 @@ elasticsearch:
   url: "https://localhost:9200/"
   security:
     enabled: true
-    client:
-      enabled: true
+  sslVerification: true
   username: "elastic"
   password: "rtr1Cyncv7kMAAhr6rEa"

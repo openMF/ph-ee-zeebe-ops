@@ -50,8 +50,8 @@ public class ZeebeOpsApplication {
     @Value("${elasticsearch.security.enabled}")
     private Boolean securityEnabled;
 
-    @Value("${elasticsearch.security.client.enabled}")
-    private Boolean clientEnabled;
+    @Value("${elasticsearch.sslVerification}")
+    private Boolean sslVerify;
 
     @Value("${elasticsearch.username}")
     private String username;
@@ -73,25 +73,22 @@ public class ZeebeOpsApplication {
                 .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     }
 
-     public RestHighLevelClient client() {
+    @Bean
+    public RestHighLevelClient client() {
         RestClientBuilder builder = null;
         SSLContext sslContext = null;
-        if(securityEnabled){
+        if (securityEnabled) {
             final CredentialsProvider credentialsProvider = new BasicCredentialsProvider();
-            credentialsProvider.setCredentials(AuthScope.ANY,
-                    new UsernamePasswordCredentials(username, password));
-            if(clientEnabled){
+            credentialsProvider.setCredentials(AuthScope.ANY, new UsernamePasswordCredentials(username, password));
+            if (sslVerify) {
                 SSLContextBuilder sslBuilder = null;
                 try {
-                    sslBuilder = SSLContexts.custom()
-                            .loadTrustMaterial(null, (x509Certificates, s) -> true);
+                    sslBuilder = SSLContexts.custom().loadTrustMaterial(null, (x509Certificates, s) -> true);
                     sslContext = sslBuilder.build();
                 } catch (NoSuchAlgorithmException | KeyStoreException | KeyManagementException e) {
                     e.printStackTrace();
                 }
-
                 HttpHost httpHost = urlToHttpHost(elasticUrl);
-
                 SSLContext finalSslContext = sslContext;
                 builder = RestClient.builder(httpHost)
                         .setHttpClientConfigCallback(new RestClientBuilder.HttpClientConfigCallback() {
@@ -99,21 +96,35 @@ public class ZeebeOpsApplication {
                             public HttpAsyncClientBuilder customizeHttpClient(HttpAsyncClientBuilder httpClientBuilder) {
                                 return httpClientBuilder
                                         .setSSLContext(finalSslContext)
+                                        .setSSLHostnameVerifier(NoopHostnameVerifier.INSTANCE)
+                                        .setDefaultCredentialsProvider(credentialsProvider);
+                            }
+                        });
+            } else {
+                HttpHost httpHost = urlToHttpHost(elasticUrl);
+                builder = RestClient.builder(httpHost)
+                        .setHttpClientConfigCallback(new RestClientBuilder.HttpClientConfigCallback() {
+                            @Override
+                            public HttpAsyncClientBuilder customizeHttpClient(HttpAsyncClientBuilder httpClientBuilder) {
+                                return httpClientBuilder
                                         .setDefaultCredentialsProvider(credentialsProvider);
                             }
                         });
             }
-        }
-        else {
-            HttpHost httpHost = urlToHttpHost(elasticUrl);
+        } else
 
-            // use single thread for rest client
-            builder =
-                    RestClient.builder(httpHost).setHttpClientConfigCallback(this::setHttpClientConfigCallback);
-        }
-        return new RestHighLevelClient(builder);
+    {
+        HttpHost httpHost = urlToHttpHost(elasticUrl);
 
+        // use single thread for rest client
+        builder =
+                RestClient.builder(httpHost).setHttpClientConfigCallback(this::setHttpClientConfigCallback);
     }
+            return new
+
+    RestHighLevelClient(builder);
+
+}
 
     private HttpAsyncClientBuilder setHttpClientConfigCallback(HttpAsyncClientBuilder builder) {
         builder.setDefaultIOReactorConfig(IOReactorConfig.custom().setIoThreadCount(1).build());
@@ -125,16 +136,6 @@ public class ZeebeOpsApplication {
 
         return builder;
     }
-
-//    private void setupBasicAuthentication(HttpAsyncClientBuilder builder) {
-//        CredentialsProvider credentialsProvider = new BasicCredentialsProvider();
-//        credentialsProvider.setCredentials(
-//                AuthScope.ANY,
-//                new UsernamePasswordCredentials(
-//                        configuration.authentication.username, configuration.authentication.password));
-//
-//        builder.setDefaultCredentialsProvider(credentialsProvider);
-//    }
 
     private static HttpHost urlToHttpHost(String url) {
         URI uri = null;
