@@ -91,25 +91,15 @@ public class ZeebeOpsApplication {
                 HttpHost httpHost = urlToHttpHost(elasticUrl);
                 SSLContext finalSslContext = sslContext;
                 builder = RestClient.builder(httpHost)
-                        .setHttpClientConfigCallback(new RestClientBuilder.HttpClientConfigCallback() {
-                            @Override
-                            public HttpAsyncClientBuilder customizeHttpClient(HttpAsyncClientBuilder httpClientBuilder) {
-                                return httpClientBuilder
-                                        .setSSLContext(finalSslContext)
-                                        .setSSLHostnameVerifier(NoopHostnameVerifier.INSTANCE)
-                                        .setDefaultCredentialsProvider(credentialsProvider);
-                            }
-                        });
+                        .setHttpClientConfigCallback(httpClientBuilder -> httpClientBuilder
+                                .setSSLContext(finalSslContext)
+                                .setSSLHostnameVerifier(NoopHostnameVerifier.INSTANCE)
+                                .setDefaultCredentialsProvider(credentialsProvider));
             } else {
                 HttpHost httpHost = urlToHttpHost(elasticUrl);
                 builder = RestClient.builder(httpHost)
-                        .setHttpClientConfigCallback(new RestClientBuilder.HttpClientConfigCallback() {
-                            @Override
-                            public HttpAsyncClientBuilder customizeHttpClient(HttpAsyncClientBuilder httpClientBuilder) {
-                                return httpClientBuilder
-                                        .setDefaultCredentialsProvider(credentialsProvider);
-                            }
-                        });
+                        .setHttpClientConfigCallback(httpClientBuilder -> httpClientBuilder
+                                .setDefaultCredentialsProvider(credentialsProvider));
             }
         } else
 
