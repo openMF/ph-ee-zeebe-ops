@@ -52,11 +52,6 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
     @Autowired
     ZeebeOpsApplication zeebeOpsApplication;
 
-    @PostConstruct
-    RestHighLevelClient esClient = zeebeOpsApplication.client();
-
-
-
     @Value("#{'${tenants}'.split(',')}")
     private List<String> tenants;
 
@@ -74,6 +69,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
         f.close();
 
     }
+
 
 
     private List<String> formatBpmn(String bpmnFileName) throws IOException {
@@ -110,6 +106,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
     @Override
     public void configure() {
 
+        RestHighLevelClient esClient = zeebeOpsApplication.client();
 
         /*
          * Use this endpoint for uploading the bpmns
@@ -643,6 +640,8 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
     }
 
     private JSONObject getProcessVariable(Long processInstanceKey) throws IOException {
+
+        RestHighLevelClient esClient = zeebeOpsApplication.client();
         TermsAggregationBuilder valueAgg = AggregationBuilders.terms("value")
                 .field("value.value")
                 .size(100);
@@ -679,6 +678,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
     }
 
     private String getCurrentState(Long processInstanceKey) throws Exception {
+        RestHighLevelClient esClient = zeebeOpsApplication.client();
         TermsAggregationBuilder definitionNameAggregation = AggregationBuilders.terms("worker")
                 .field("value.worker")
                 .size(5);

@@ -29,6 +29,7 @@ import org.springframework.data.elasticsearch.client.ClientConfiguration;
 import org.springframework.data.elasticsearch.client.RestClients;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 import org.springframework.data.elasticsearch.core.ElasticsearchRestTemplate;
+import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
 import javax.net.ssl.SSLContext;
@@ -39,6 +40,7 @@ import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 
 @SpringBootApplication
+@Component
 public class ZeebeOpsApplication {
 
     @Value("${spring.data.elasticsearch.client.reactive.endpoints}")
@@ -71,7 +73,6 @@ public class ZeebeOpsApplication {
                 .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     }
 
-    @Bean
      public RestHighLevelClient client() {
         RestClientBuilder builder = null;
         SSLContext sslContext = null;
