@@ -40,7 +40,6 @@ import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 
 @SpringBootApplication
-@Component
 public class ZeebeOpsApplication {
 
     @Value("${spring.data.elasticsearch.client.reactive.endpoints}")
@@ -99,7 +98,6 @@ public class ZeebeOpsApplication {
                             public HttpAsyncClientBuilder customizeHttpClient(HttpAsyncClientBuilder httpClientBuilder) {
                                 return httpClientBuilder
                                         .setSSLContext(finalSslContext)
-                                        .setSSLHostnameVerifier(NoopHostnameVerifier.INSTANCE)
                                         .setDefaultCredentialsProvider(credentialsProvider);
                             }
                         });
