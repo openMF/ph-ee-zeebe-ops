@@ -22,6 +22,7 @@ import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.json.JSONArray;
 import org.elasticsearch.client.indices.GetIndexRequest;
 import org.json.JSONObject;
+import org.mifos.ops.zeebe.ZeebeOpsApplication;
 import org.slf4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -47,8 +48,16 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
     @Autowired
     private Logger logger;
 
+    RestHighLevelClient esClient;
+
     @Autowired
-    private RestHighLevelClient esClient;
+    ZeebeOpsApplication zeebeOpsApplication;
+
+
+    @Value("${elasticsearch.security.enabled}")
+    private Boolean securityEnabled;
+
+
 
     @Value("#{'${tenants}'.split(',')}")
     private List<String> tenants;
@@ -102,6 +111,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
     @Override
     public void configure() {
 
+         esClient = zeebeOpsApplication.client();
 
         /*
          * Use this endpoint for uploading the bpmns
@@ -635,6 +645,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
     }
 
     private JSONObject getProcessVariable(Long processInstanceKey) throws IOException {
+        esClient = zeebeOpsApplication.client();
         TermsAggregationBuilder valueAgg = AggregationBuilders.terms("value")
                 .field("value.value")
                 .size(100);
@@ -671,6 +682,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
     }
 
     private String getCurrentState(Long processInstanceKey) throws Exception {
+        esClient = zeebeOpsApplication.client();
         TermsAggregationBuilder definitionNameAggregation = AggregationBuilders.terms("worker")
                 .field("value.worker")
                 .size(5);
