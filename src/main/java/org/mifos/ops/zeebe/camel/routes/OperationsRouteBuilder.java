@@ -2,6 +2,7 @@ package org.mifos.ops.zeebe.camel.routes;
 
 import io.camunda.zeebe.client.ZeebeClient;
 import io.camunda.zeebe.client.api.response.DeploymentEvent;
+import io.camunda.zeebe.client.api.response.ProcessInstanceEvent;
 import io.camunda.zeebe.model.bpmn.Bpmn;
 import io.camunda.zeebe.model.bpmn.BpmnModelInstance;
 import io.camunda.zeebe.model.bpmn.instance.Definitions;
@@ -443,13 +444,17 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                     e.getMessage().setBody(e.getIn().getHeader(BPMN_PROCESS_ID, String.class));
 
 
-                    zeebeClient.newCreateInstanceCommand()
+                    ProcessInstanceEvent job = zeebeClient.newCreateInstanceCommand()
                             .bpmnProcessId(e.getIn().getHeader(BPMN_PROCESS_ID, String.class))
                             .latestVersion()
                             .variables(variables)
                             .send()
                             .join();
-
+                    JSONObject res = new JSONObject();
+                    res.put("BpmnProcessId", job.getBpmnProcessId());
+                    res.put("ProcessInstanceKey", job.getProcessInstanceKey());
+                    res.put("ProcessDefinitionKey", job.getProcessDefinitionKey());
+                    e.getMessage().setBody(res.toString());
                 });
 
         /**
