@@ -451,9 +451,9 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                             .send()
                             .join();
                     JSONObject res = new JSONObject();
-                    res.put("BpmnProcessId", job.getBpmnProcessId());
-                    res.put("ProcessInstanceKey", job.getProcessInstanceKey());
-                    res.put("ProcessDefinitionKey", job.getProcessDefinitionKey());
+                    res.put("bpmnProcessId", job.getBpmnProcessId());
+                    res.put("processInstanceKey", job.getProcessInstanceKey());
+                    res.put("processDefinitionKey", job.getProcessDefinitionKey());
                     e.getMessage().setBody(res.toString());
                 });
 
