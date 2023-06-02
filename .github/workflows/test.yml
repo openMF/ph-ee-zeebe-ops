@@ -1,0 +1,23 @@
+name: Test
+on: [push, pull_request]
+jobs:
+  Assemble:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v2
+
+      - name: Check out ph-ee-connector-common repository code
+        uses: actions/checkout@master
+        with:
+          repository: openMF/ph-ee-connector-common
+          ref: refs/heads/master
+          path: 'ph-ee-connector-common'
+
+      - name: Install ph-ee-connector-common
+        working-directory: ph-ee-connector-common
+        run: ./gradlew clean install
+
+
+      - name: Build project
+        run: ./gradlew clean build
