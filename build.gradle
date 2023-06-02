@@ -22,7 +22,7 @@ dependencies {
     implementation 'org.apache.camel:camel-bean-validator:3.4.0'
     implementation 'org.apache.camel:camel-undertow:3.4.0'
     implementation 'org.apache.camel.springboot:camel-jackson-starter:3.4.0'
-    implementation 'io.camunda:zeebe-client-java:1.1.0'
+    implementation 'io.camunda:zeebe-client-java:8.1.1'
     implementation 'io.netty:netty-bom:4.1.65.Final'
     implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.13.1'
     implementation 'org.json:json:20211205'
