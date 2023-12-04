@@ -102,11 +102,29 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
             processElement.setAttribute("name", tenantSpecificId);
             String fp = String.format("upload/%s.bpmn", tenantSpecificId);
             Bpmn.writeModelToFile(new File(fp), tenantSpecificInstance);
+            formatBpmnWorker(fp,tenant);
             Bpmn.validateModel(tenantSpecificInstance);
             uploadingFilePath.add(fp);
             logger.info("Done");
         }
         return uploadingFilePath;
+    }
+    private void formatBpmnWorker(String filePath, String tenant) throws IOException {
+        File fileToBeModified = new File(filePath);
+        String oldContent = "";
+        BufferedReader reader = new BufferedReader(new FileReader(fileToBeModified));
+        String line = reader.readLine();
+
+        while (line != null)
+        {
+            oldContent = oldContent + line + System.lineSeparator();
+            line = reader.readLine();
+        }
+        String newContent = oldContent.replaceAll("DFSPID", tenant);
+        FileWriter writer = new FileWriter(fileToBeModified);
+        writer.write(newContent);
+        reader.close();
+        writer.close();
     }
 
     @Override
