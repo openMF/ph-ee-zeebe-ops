@@ -16,6 +16,10 @@ repositories {
     }
 }
 
+ext {
+    springBootVersion = '2.5.5'
+}
+
 dependencies {
     implementation 'org.mifos:ph-ee-connector-common:1.0.0-SNAPSHOT'
     implementation 'org.apache.camel.springboot:camel-spring-boot-starter:3.4.0'
@@ -30,6 +34,9 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'javax.mail:mail:1.4.7'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    implementation "org.springframework.boot:spring-boot-starter:$springBootVersion"
+    implementation "org.springframework.boot:spring-boot-starter-web:$springBootVersion"
+    implementation "org.springframework.boot:spring-boot-starter-actuator:$springBootVersion"
 }
 
 test {
