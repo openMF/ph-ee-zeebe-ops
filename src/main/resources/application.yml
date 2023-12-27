@@ -27,8 +27,6 @@ logging:
   level:
     root: INFO
 
-
-
 elasticsearch:
   url: "https://ph-ee-elasticsearch:9200/"
   security:
@@ -36,3 +34,13 @@ elasticsearch:
   sslVerification: false
   username: "elastic"
   password: "spmepassword"
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      liveness:
+        enabled: true
+      readiness:
+        enabled: true
