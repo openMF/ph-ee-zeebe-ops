@@ -36,3 +36,16 @@ elasticsearch:
   sslVerification: false
   username: "elastic"
   password: "spmepassword"
+
+management:
+#  server:
+#    port: 5000
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      liveness:
+        enabled: true
+      readiness:
+        enabled: true
+#      show-details: always
