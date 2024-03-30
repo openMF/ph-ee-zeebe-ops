@@ -40,6 +40,7 @@ management:
 #    port: 5000
   endpoint:
     health:
+      enabled: true
       probes:
         enabled: true
       liveness:
