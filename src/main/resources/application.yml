@@ -35,9 +35,10 @@ elasticsearch:
   username: "elastic"
   password: "spmepassword"
 
+
+server:
+  port: 5000
 management:
-#  server:
-#    port: 5000
   endpoint:
     health:
       enabled: true
