@@ -36,8 +36,7 @@ elasticsearch:
   password: "spmepassword"
 
 
-server:
-  port: 5000
+
 management:
   endpoint:
     health:
