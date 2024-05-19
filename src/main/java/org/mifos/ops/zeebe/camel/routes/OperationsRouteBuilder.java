@@ -458,6 +458,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                 .process(e -> {
 
                     JSONObject variables = new JSONObject(e.getIn().getBody(String.class));
+                    Map<String, Object> map = variables.toMap();
 
                     e.getMessage().setBody(e.getIn().getHeader(BPMN_PROCESS_ID, String.class));
 
@@ -465,7 +466,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                     ProcessInstanceEvent job = zeebeClient.newCreateInstanceCommand()
                             .bpmnProcessId(e.getIn().getHeader(BPMN_PROCESS_ID, String.class))
                             .latestVersion()
-                            .variables(variables)
+                            .variables(map)
                             .send()
                             .join();
                     JSONObject res = new JSONObject();
