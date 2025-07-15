@@ -1,3 +1,7 @@
+server:
+  port: 8080
+  address: 0.0.0.0
+  
 camel:
   server-port: 5000
   springboot:
@@ -27,8 +31,6 @@ logging:
   level:
     root: INFO
 
-
-
 elasticsearch:
   url: "https://ph-ee-elasticsearch:9200/"
   security:
@@ -38,8 +40,10 @@ elasticsearch:
   password: "spmepassword"
 
 management:
-#  server:
-#    port: 5000
+  endpoints:
+    web:
+      exposure:
+        include: health,info
   endpoint:
     health:
       probes:
@@ -48,4 +52,4 @@ management:
         enabled: true
       readiness:
         enabled: true
-#      show-details: always
+
