@@ -1,6 +1,6 @@
 package org.mifos.ops.zeebe.zeebe;
 
-public class ZeebeMessages {
+public final class ZeebeMessages {
 
     private ZeebeMessages() {}
 

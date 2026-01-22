@@ -1,11 +1,31 @@
 package org.mifos.ops.zeebe.camel.routes;
 
+import static org.mifos.ops.zeebe.zeebe.ZeebeMessages.OPERATOR_MANUAL_RECOVERY;
+import static org.mifos.ops.zeebe.zeebe.ZeebeVariables.BPMN_PROCESS_ID;
+import static org.mifos.ops.zeebe.zeebe.ZeebeVariables.PROCESS_DEFINITION_KEY;
+import static org.mifos.ops.zeebe.zeebe.ZeebeVariables.PROCESS_INSTANCE_KEY;
+import static org.mifos.ops.zeebe.zeebe.ZeebeVariables.TRANSACTION_ID;
+
 import io.camunda.zeebe.client.ZeebeClient;
 import io.camunda.zeebe.client.api.response.DeploymentEvent;
 import io.camunda.zeebe.client.api.response.ProcessInstanceEvent;
 import io.camunda.zeebe.model.bpmn.Bpmn;
 import io.camunda.zeebe.model.bpmn.BpmnModelInstance;
-import io.camunda.zeebe.model.bpmn.instance.Definitions;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.RandomAccessFile;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+import javax.activation.DataHandler;
+import javax.mail.internet.MimeBodyPart;
 import org.apache.camel.Exchange;
 import org.apache.camel.LoggingLevel;
 import org.camunda.bpm.model.xml.instance.DomDocument;
@@ -14,31 +34,20 @@ import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.client.RequestOptions;
 import org.elasticsearch.client.RestHighLevelClient;
+import org.elasticsearch.client.indices.GetIndexRequest;
 import org.elasticsearch.index.query.BoolQueryBuilder;
-import org.elasticsearch.index.query.QueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.search.aggregations.AggregationBuilders;
 import org.elasticsearch.search.aggregations.bucket.terms.TermsAggregationBuilder;
 import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.json.JSONArray;
-import org.elasticsearch.client.indices.GetIndexRequest;
 import org.json.JSONObject;
+import org.mifos.connector.common.camel.ErrorHandlerRouteBuilder;
 import org.mifos.ops.zeebe.ZeebeOpsApplication;
 import org.slf4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-import org.mifos.connector.common.camel.ErrorHandlerRouteBuilder;
-import org.springframework.web.multipart.MultipartFile;
-
-import javax.activation.DataHandler;
-import javax.mail.internet.MimeBodyPart;
-import java.io.*;
-import java.time.Duration;
-import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
-import static org.mifos.ops.zeebe.zeebe.ZeebeMessages.OPERATOR_MANUAL_RECOVERY;
-import static org.mifos.ops.zeebe.zeebe.ZeebeVariables.*;
 
 @Component
 public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
@@ -64,7 +73,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
     private List<String> tenants;
 
     private void removeLastLine(String bpmnFileName) throws IOException {
-        String filePath = "upload/"+bpmnFileName;
+        String filePath = "upload/" + bpmnFileName;
         RandomAccessFile f = new RandomAccessFile(filePath, "rw");
         long length = f.length() - 1;
         byte b;
@@ -72,15 +81,15 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
             length -= 1;
             f.seek(length);
             b = f.readByte();
-        } while(b != 10);
-        f.setLength(length+1);
+        } while (b != 10);
+        f.setLength(length + 1);
         f.close();
 
     }
 
     private List<String> formatBpmn(String bpmnFileName) throws IOException {
         removeLastLine(bpmnFileName);
-        String filePath = "upload/"+bpmnFileName;
+        String filePath = "upload/" + bpmnFileName;
         List<String> uploadingFilePath = new ArrayList<>();
 
         if (!bpmnFileName.contains("DFSPID")) {
@@ -89,7 +98,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
         }
 
         BpmnModelInstance instance = Bpmn.readModelFromFile(new File(filePath));
-        String baseId = bpmnFileName.substring(0, bpmnFileName.indexOf("DFSPID")-1).replace("-", "_");
+        String baseId = bpmnFileName.substring(0, bpmnFileName.indexOf("DFSPID") - 1).replace("-", "_");
 
         for (String tenant: tenants) {
             logger.info("Creating tenant specific: " + tenant);
@@ -102,21 +111,21 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
             processElement.setAttribute("name", tenantSpecificId);
             String fp = String.format("upload/%s.bpmn", tenantSpecificId);
             Bpmn.writeModelToFile(new File(fp), tenantSpecificInstance);
-            formatBpmnWorker(fp,tenant);
+            formatBpmnWorker(fp, tenant);
             Bpmn.validateModel(tenantSpecificInstance);
             uploadingFilePath.add(fp);
             logger.info("Done");
         }
         return uploadingFilePath;
     }
+
     private void formatBpmnWorker(String filePath, String tenant) throws IOException {
         File fileToBeModified = new File(filePath);
         String oldContent = "";
         BufferedReader reader = new BufferedReader(new FileReader(fileToBeModified));
         String line = reader.readLine();
 
-        while (line != null)
-        {
+        while (line != null) {
             oldContent = oldContent + line + System.lineSeparator();
             line = reader.readLine();
         }
@@ -157,7 +166,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                     // file formatting
                     List<String> bpmnFilePaths = formatBpmn(bpmnFileName);
 
-                    for(String path: bpmnFilePaths) {
+                    for (String path: bpmnFilePaths) {
                         // deploying
                         DeploymentEvent deploymentEvent =
                                 zeebeClient.newDeployCommand().addResourceFile(path)
@@ -167,9 +176,9 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                     }
 
                     // deleting bpmn file
-                    File file = new File("upload/"+bpmnFileName);
+                    File file = new File("upload/" + bpmnFileName);
                     file.delete();
-                    logger.info("Deleted file " + "upload/"+bpmnFileName + "after successful deployment");
+                    logger.info("Deleted file " + "upload/" + bpmnFileName + " after successful deployment");
 
                     exchange.getIn().setBody(response.toString());
                     logger.info(response.toString());
@@ -179,8 +188,8 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
          * Cancellation of the process by variable name and value
          *
          * sample request: {
-         * 	"key": "initiatorFspId",
-         * 	"value": "\"ibank-usa\""
+         *   "key": "initiatorFspId",
+         *   "value": "\"ibank-usa\""
          * }
          *
          * sample response: {
@@ -499,7 +508,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                     JSONObject object = new JSONObject(exchange.getIn().getBody(String.class));
                     JSONArray processIds = object.getJSONArray("processId");
 
-                    JSONObject response =cancelProcess(processIds);
+                    JSONObject response = cancelProcess(processIds);
 
                     exchange.getMessage().setBody(response.toString());
                 });
@@ -731,7 +740,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
         JSONArray keyBucket = res.getJSONObject("aggregations").getJSONObject("sterms#worker")
                 .getJSONArray("buckets");
 
-        if(keyBucket.isEmpty()) {
+        if (keyBucket.isEmpty()) {
             throw new Exception("Unable to fetch current state");
         }
 
@@ -751,7 +760,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                 zeebeClient.newCancelInstanceCommand(processId).send().join();
                 success.put(processId);
                 successfullyCancelled.getAndIncrement();
-            }catch (Exception e) {
+            } catch (Exception e) {
                 failed.put(processId);
                 cancellationFailed.getAndIncrement();
                 logger.error("Cancellation of process id " + processId + " failed\n" + e.getMessage());
@@ -781,7 +790,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
                 zeebeClient.newCancelInstanceCommand(processId).send().join();
                 success.put(processId);
                 successfullyCancelled.getAndIncrement();
-            }catch (Exception e) {
+            } catch (Exception e) {
                 failed.put(processId);
                 cancellationFailed.getAndIncrement();
                 logger.error("Cancellation of process id " + processId + " failed\n" + e.getMessage());

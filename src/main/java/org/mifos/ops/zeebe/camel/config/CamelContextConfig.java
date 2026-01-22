@@ -1,13 +1,12 @@
 package org.mifos.ops.zeebe.camel.config;
 
+import java.util.HashMap;
 import org.apache.camel.CamelContext;
 import org.apache.camel.spi.RestConfiguration;
 import org.apache.camel.spring.boot.CamelContextConfiguration;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-
-import java.util.HashMap;
 
 @Configuration
 public class CamelContextConfig {

@@ -2,6 +2,7 @@ plugins {
     id 'org.springframework.boot' version '2.6.2'
     id 'io.spring.dependency-management' version '1.0.11.RELEASE'
     id 'java'
+    id 'checkstyle'
 }
 
 group = 'org.mifos'
@@ -24,6 +25,22 @@ repositories {
 
 ext {
     springBootVersion = '2.6.2'
+}
+
+checkstyle {
+    toolVersion = '10.9.3'
+    configFile = file("${rootDir}/config/checkstyle/checkstyle.xml")
+    ignoreFailures = false
+    maxWarnings = 0
+}
+
+configurations {
+    checkstyle
+}
+
+dependencies {
+    checkstyle 'com.puppycrawl.tools:checkstyle:10.9.3'
+    checkstyle 'com.github.sevntu-checkstyle:sevntu-checks:1.44.1'
 }
 
 dependencies {

@@ -5,6 +5,12 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.security.KeyManagementException;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+import javax.net.ssl.SSLContext;
 import org.apache.http.HttpHost;
 import org.apache.http.auth.AuthScope;
 import org.apache.http.auth.UsernamePasswordCredentials;
@@ -25,23 +31,16 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.context.annotation.Bean;
-import org.springframework.data.elasticsearch.client.ClientConfiguration;
-import org.springframework.data.elasticsearch.client.RestClients;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 import org.springframework.data.elasticsearch.core.ElasticsearchRestTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
-import javax.net.ssl.SSLContext;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.security.KeyManagementException;
-import java.security.KeyStoreException;
-import java.security.NoSuchAlgorithmException;
-
 @SpringBootApplication
 @Component
 public class ZeebeOpsApplication {
+
+    private static final Logger log = LoggerFactory.getLogger(ZeebeOpsApplication.class);
 
     @Value("${spring.data.elasticsearch.client.reactive.endpoints}")
     private String contactPoint;
@@ -78,7 +77,7 @@ public class ZeebeOpsApplication {
 
         RestClientBuilder builder;
         SSLContext sslContext = null;
-        if(securityEnabled) {
+        if (securityEnabled) {
             final CredentialsProvider credentialsProvider = new BasicCredentialsProvider();
             credentialsProvider.setCredentials(AuthScope.ANY, new UsernamePasswordCredentials(username, password));
             if (sslVerify) {
@@ -87,7 +86,7 @@ public class ZeebeOpsApplication {
                     sslBuilder = SSLContexts.custom().loadTrustMaterial(null, (x509Certificates, s) -> true);
                     sslContext = sslBuilder.build();
                 } catch (NoSuchAlgorithmException | KeyStoreException | KeyManagementException e) {
-                    e.printStackTrace();
+                    log.error("Error building SSL context", e);
                 }
                 HttpHost httpHost = urlToHttpHost(elasticUrl);
                 SSLContext finalSslContext = sslContext;
@@ -107,7 +106,9 @@ public class ZeebeOpsApplication {
             builder =
                     RestClient.builder(httpHost).setHttpClientConfigCallback(this::setHttpClientConfigCallback);
         }
-        return new RestHighLevelClient(builder);}
+        return new RestHighLevelClient(builder);
+    }
+
     private HttpAsyncClientBuilder setHttpClientConfigCallback(HttpAsyncClientBuilder builder) {
         builder.setDefaultIOReactorConfig(IOReactorConfig.custom().setIoThreadCount(1).build());
         return builder;
@@ -118,7 +119,7 @@ public class ZeebeOpsApplication {
         try {
             uri = new URI(url);
         } catch (URISyntaxException e) {
-            e.printStackTrace();
+            log.error("Error parsing URL: {}", url, e);
         }
 
         return new HttpHost(uri.getHost(), uri.getPort(), uri.getScheme());
