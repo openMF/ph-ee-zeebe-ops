@@ -1,13 +1,14 @@
 plugins {
-    id 'org.springframework.boot' version '2.6.2'
-    id 'io.spring.dependency-management' version '1.0.11.RELEASE'
+    id 'org.springframework.boot' version '3.4.4'
+    id 'io.spring.dependency-management' version '1.1.6'
     id 'java'
     id 'checkstyle'
 }
 
 group = 'org.mifos'
 version = '2.0.0.mifos-SNAPSHOT'
-sourceCompatibility = '17'
+sourceCompatibility = JavaVersion.VERSION_21
+targetCompatibility = JavaVersion.VERSION_21
 
 repositories {
     mavenCentral()
@@ -21,10 +22,20 @@ repositories {
     maven {
         url = uri('https://mifos.jfrog.io/artifactory/mifosx-gradle-local')
     }
-}
 
-ext {
-    springBootVersion = '2.6.2'
+    // Mifos Platform BOM + ph-ee-connector-common 2.0.0-SNAPSHOT are consumed
+    // from the local JFrog Artifactory sandbox (Docker Compose in
+    // proposal/local-jfrog/). Swap this host for the production Mifos JFrog
+    // when the official BOM is ready.
+    maven {
+        name = 'LocalJFrog'
+        url = uri('http://localhost:8081/artifactory/mifos-platform-snapshot')
+        allowInsecureProtocol = true
+        credentials {
+            username = findProperty('localJfrog.user') ?: System.getenv('LOCAL_JFROG_USER')
+            password = findProperty('localJfrog.key') ?: System.getenv('LOCAL_JFROG_KEY')
+        }
+    }
 }
 
 checkstyle {
@@ -44,34 +55,35 @@ dependencies {
 }
 
 dependencies {
-    // implementation 'org.mifos:ph-ee-connector-common:1.0.0-SNAPSHOT'
-    implementation 'org.mifos:ph-ee-connector-common:1.8.1-gazelle'
-    
-    // Updated Camel versions compatible with Spring Boot 2.6.2
-    implementation 'org.apache.camel.springboot:camel-spring-boot-starter:3.14.0'
-    implementation 'org.apache.camel:camel-bean-validator:3.14.0'
-    implementation 'org.apache.camel:camel-undertow:3.14.0'
-    implementation 'org.apache.camel.springboot:camel-jackson-starter:3.14.0'
-    
-    implementation 'io.camunda:zeebe-client-java:8.1.1'
-    
-    // Updated Netty version for better compatibility
-    implementation 'io.netty:netty-bom:4.1.72.Final'
-    
-    // Updated Jackson version
-    implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.13.1'
-    
-    implementation 'org.json:json:20211205'
-    implementation 'org.springframework.boot:spring-boot-starter-data-elasticsearch'
+    // Mifos Platform BOM pins Spring Boot 3.4, Camel 4, Zeebe 8, Jakarta EE 10
+    // and every other shared library version. Do NOT hardcode managed versions.
+    // This is a deployable application (leaf node), so use enforcedPlatform().
+    implementation enforcedPlatform('org.mifos.platform:mifos-platform-bom:1.0.0-SNAPSHOT')
+
+    implementation 'org.mifos:ph-ee-connector-common:2.0.0-SNAPSHOT'
+
+    implementation 'org.apache.camel.springboot:camel-spring-boot-starter'
+    implementation 'org.apache.camel:camel-bean-validator'
+    implementation 'org.apache.camel:camel-undertow'
+    implementation 'org.apache.camel.springboot:camel-jackson-starter'
+
+    implementation 'io.camunda:zeebe-client-java'
+
+    implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310'
+
+    implementation 'org.json:json'
+    // The code uses the legacy ES7 RestHighLevelClient directly (own @Bean, no
+    // Spring Data repositories), so the spring-data-elasticsearch starter was
+    // replaced with the explicit legacy client, pinned via the BOM.
+    implementation 'org.elasticsearch.client:elasticsearch-rest-high-level-client'
     implementation 'org.springframework.boot:spring-boot-starter-web'
-    implementation 'javax.mail:mail:1.4.7'
-    
+    // javax.mail:mail 1.4.7 -> Jakarta Mail (Eclipse Angus implementation)
+    implementation 'org.eclipse.angus:angus-mail'
+
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
-    
-    // Spring Boot starters using the variable
-    implementation "org.springframework.boot:spring-boot-starter:$springBootVersion"
-    implementation "org.springframework.boot:spring-boot-starter-web:$springBootVersion"
-    implementation "org.springframework.boot:spring-boot-starter-actuator:$springBootVersion"
+
+    implementation 'org.springframework.boot:spring-boot-starter'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
 }
 
 test {

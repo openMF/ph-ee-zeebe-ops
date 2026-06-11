@@ -1,9 +1,9 @@
 package org.mifos.ops.zeebe.camel.routes;
 
 import static org.mifos.ops.zeebe.zeebe.ZeebeMessages.OPERATOR_MANUAL_RECOVERY;
-import static org.mifos.ops.zeebe.zeebe.ZeebeVariables.BPMN_PROCESS_ID;
-import static org.mifos.ops.zeebe.zeebe.ZeebeVariables.PROCESS_DEFINITION_KEY;
-import static org.mifos.ops.zeebe.zeebe.ZeebeVariables.PROCESS_INSTANCE_KEY;
+import static org.mifos.ops.zeebe.zeebe.ZeebeVariables.BPMN_PROCESS_ID_PARAM;
+import static org.mifos.ops.zeebe.zeebe.ZeebeVariables.PROCESS_DEFINITION_KEY_PARAM;
+import static org.mifos.ops.zeebe.zeebe.ZeebeVariables.PROCESS_INSTANCE_KEY_PARAM;
 import static org.mifos.ops.zeebe.zeebe.ZeebeVariables.TRANSACTION_ID;
 
 import io.camunda.zeebe.client.ZeebeClient;
@@ -11,6 +11,8 @@ import io.camunda.zeebe.client.api.response.DeploymentEvent;
 import io.camunda.zeebe.client.api.response.ProcessInstanceEvent;
 import io.camunda.zeebe.model.bpmn.Bpmn;
 import io.camunda.zeebe.model.bpmn.BpmnModelInstance;
+import jakarta.activation.DataHandler;
+import jakarta.mail.internet.MimeBodyPart;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
@@ -24,8 +26,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
-import javax.activation.DataHandler;
-import javax.mail.internet.MimeBodyPart;
 import org.apache.camel.Exchange;
 import org.apache.camel.LoggingLevel;
 import org.camunda.bpm.model.xml.instance.DomDocument;
@@ -257,12 +257,12 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
          *   ]
          * }
          */
-        from(String.format("rest:get:/channel/process/{%s}/task/", PROCESS_DEFINITION_KEY))
+        from(String.format("rest:get:/channel/process/{%s}/task/", PROCESS_DEFINITION_KEY_PARAM))
                 .id("get-executed-task")
                 .log(LoggingLevel.INFO, "## Fetching the executed task")
                 .process(exchange -> {
 
-                    Long processInstanceKey = exchange.getIn().getHeader(PROCESS_DEFINITION_KEY, Long.class);
+                    Long processInstanceKey = exchange.getIn().getHeader(PROCESS_DEFINITION_KEY_PARAM, Long.class);
 
                     TermsAggregationBuilder definitionNameAggregation = AggregationBuilders.terms("worker")
                             .field("value.worker")
@@ -301,7 +301,7 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
          * Get the process variables by process instance key
          *
          * demo url: /channel/process/variable/2251799813783649
-         * here [2251799813783649] is the value for path parameter [PROCESS_INSTANCE_KEY]
+         * here [2251799813783649] is the value for path parameter [processInstanceKey]
          *
          * example response: {
          * "isRtpRequest":"false",
@@ -309,12 +309,12 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
          * "originDate":"1633441154238"
          * }
          */
-        from(String.format("rest:get:/channel/process/variable/{%s}", PROCESS_INSTANCE_KEY))
+        from(String.format("rest:get:/channel/process/variable/{%s}", PROCESS_INSTANCE_KEY_PARAM))
                 .id("get-process-variable")
                 .log(LoggingLevel.INFO, "## Fetch process variable")
                 .process(exchange -> {
 
-                    Long processId = exchange.getIn().getHeader(PROCESS_INSTANCE_KEY, Long.class);
+                    Long processId = exchange.getIn().getHeader(PROCESS_INSTANCE_KEY_PARAM, Long.class);
 
                     TermsAggregationBuilder valueAgg = AggregationBuilders.terms("value")
                             .field("value.value")
@@ -363,12 +363,12 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
          *   "processVariables": {}
          * }
          */
-        from(String.format("rest:get:/channel/process/{%s}", PROCESS_DEFINITION_KEY))
+        from(String.format("rest:get:/channel/process/{%s}", PROCESS_DEFINITION_KEY_PARAM))
                 .id("get-process-variable-and-state")
                 .log(LoggingLevel.INFO, "## Fetch process variable and current state")
                 .process(exchange -> {
 
-                    Long processInstanceKey = exchange.getIn().getHeader(PROCESS_DEFINITION_KEY, Long.class);
+                    Long processInstanceKey = exchange.getIn().getHeader(PROCESS_DEFINITION_KEY_PARAM, Long.class);
 
                     try {
                         JSONObject processVariables = getProcessVariable(processInstanceKey);
@@ -458,21 +458,21 @@ public class OperationsRouteBuilder extends ErrorHandlerRouteBuilder {
          * response body: Null
          *
          * demo url: /channel/workflow/international_remittance_payer_process-ibank-usa
-         * Here [international_remittance_payer_process-ibank-usa] is the value of [BPMN_PROCESS_ID] path variable
+         * Here [international_remittance_payer_process-ibank-usa] is the value of [bpmnProcessId] path variable
          *
          */
-        from(String.format("rest:POST:/channel/workflow/{%s}", BPMN_PROCESS_ID))
+        from(String.format("rest:POST:/channel/workflow/{%s}", BPMN_PROCESS_ID_PARAM))
                 .id("workflow-start")
                 .log(LoggingLevel.INFO, "## Starting new workflow")
                 .process(e -> {
 
                     JSONObject variables = new JSONObject(e.getIn().getBody(String.class));
 
-                    e.getMessage().setBody(e.getIn().getHeader(BPMN_PROCESS_ID, String.class));
+                    e.getMessage().setBody(e.getIn().getHeader(BPMN_PROCESS_ID_PARAM, String.class));
 
 
                     ProcessInstanceEvent job = zeebeClient.newCreateInstanceCommand()
-                            .bpmnProcessId(e.getIn().getHeader(BPMN_PROCESS_ID, String.class))
+                            .bpmnProcessId(e.getIn().getHeader(BPMN_PROCESS_ID_PARAM, String.class))
                             .latestVersion()
                             .variables(variables)
                             .send()

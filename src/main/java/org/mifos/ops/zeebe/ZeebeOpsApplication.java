@@ -31,8 +31,6 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.context.annotation.Bean;
-import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
-import org.springframework.data.elasticsearch.core.ElasticsearchRestTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
@@ -125,10 +123,10 @@ public class ZeebeOpsApplication {
         return new HttpHost(uri.getHost(), uri.getPort(), uri.getScheme());
     }
 
-    @Bean
-    public ElasticsearchOperations elasticsearchTemplate() {
-        return new ElasticsearchRestTemplate(client());
-    }
+    // The ElasticsearchOperations/ElasticsearchRestTemplate bean was removed:
+    // no code consumed it, and the class no longer exists in Spring Data
+    // Elasticsearch 5 (Spring Boot 3). ES access goes through the
+    // RestHighLevelClient bean above.
 
     @Bean
     public RestTemplate restTemplate(RestTemplateBuilder builder) {

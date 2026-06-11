@@ -52,4 +52,11 @@ management:
         enabled: true
       readiness:
         enabled: true
+  health:
+    # Spring Boot 3 auto-configures an Elasticsearch health indicator pointing at the default
+    # localhost:9200, which isn't the ES client this connector uses (it has its own /es/health
+    # Camel route). That default probe fails (Connection refused) and drags the aggregate
+    # /actuator/health to DOWN, so disable it. The k8s liveness/readiness groups are unaffected.
+    elasticsearch:
+      enabled: false
 
